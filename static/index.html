@@ -90,6 +90,14 @@
             color: #888;
             font-size: 0.98rem;
         }
+        .suggestion-delete {
+            background: #ffeaea;
+            border-bottom: 2px dotted #e74c3c;
+        }
+        .suggestion-append {
+            background: #eaffea;
+            border-bottom: 2px dotted #27ae60;
+        }
     </style>
 </head>
 <body>
@@ -152,9 +160,66 @@ createApp({
             return this.$refs.editor.innerText.replace(/\s+/g, ' ').trim()
         },
         renderTokens(text) {
+            // 先按空格分词
             const tokens = text.split(' ').filter(t => t.length)
+            // 为每个 token 构建对象
             this.displayTokens = tokens.map(t => ({ text: t }))
+            // 如果有 actions，则标记涉及的 token
+            if (this.actions && this.actions.length) {
+                // 标记每个 token 是否涉及建议
+                this.actions.forEach((act, i) => {
+                    // 删除操作: 高亮被删除的 token
+                    if (act.action === '$DELETE') {
+                        for (let idx = act.start; idx < act.end; ++idx) {
+                            if (this.displayTokens[idx]) {
+                                this.displayTokens[idx] = {
+                                    ...this.displayTokens[idx],
+                                    suggestion: act,
+                                    suggestionType: 'delete'
+                                }
+                            }
+                        }
+                    // 追加操作: 在指定位置后插入一个虚拟 token 用于显示追加内容
+                    } else if (act.action.startsWith('$APPEND_')) {
+                        // 追加内容显示在 end 位置（即 start 后面）
+                        this.displayTokens.splice(act.end, 0, {
+                            text: act.real_replacement,
+                            suggestion: act,
+                            suggestionType: 'append',
+                            isVirtual: true // 标记为虚拟 token
+                        })
+                    // 其它操作（替换、变形等）: 高亮被替换的 token
+                    } else {
+                        for (let idx = act.start; idx < act.end; ++idx) {
+                            if (this.displayTokens[idx]) {
+                                this.displayTokens[idx] = {
+                                    ...this.displayTokens[idx],
+                                    suggestion: act,
+                                    suggestionType: 'replace'
+                                }
+                            }
+                        }
+                    }
+                })
+            }
             this.updateEditorHtml()
+        },
+        updateEditorHtml() {
+            // 为每个 token 添加 data-idx 属性，便于事件代理
+            let html = ''
+            this.displayTokens.forEach((token, idx) => {
+                if (token.suggestion) {
+                    // 不同类型高亮不同样式
+                    let cls = 'suggestion'
+                    if (token.suggestionType === 'delete') cls += ' suggestion-delete'
+                    if (token.suggestionType === 'append') cls += ' suggestion-append'
+                    html += `<span class="${cls}" data-idx="${idx}">${token.text}</span>`
+                } else {
+                    html += `<span data-idx="${idx}">${token.text}</span>`
+                }
+                if (idx !== this.displayTokens.length - 1) html += ' '
+            })
+            this.editorHtml = html
         },
         async checkGrammar() {
             this.loading = true
@@ -167,34 +232,11 @@ createApp({
                 })
                 const result = await resp.json()
                 this.actions = result.actions || []
-                const tokens = result.original.split(' ')
-                let displayTokens = tokens.map(t => ({ text: t }))
-                for (const act of this.actions) {
-                    for (let i = act.start; i < act.end; ++i) {
-                        displayTokens[i] = {
-                            ...displayTokens[i],
-                            suggestion: act
-                        }
-                    }
-                }
-                this.displayTokens = displayTokens
-                this.updateEditorHtml()
+                // 直接用原始文本和 actions 渲染
+                this.renderTokens(result.original)
             } finally {
                 this.loading = false
             }
-        },
-        updateEditorHtml() {
-            // 为每个 token 添加 data-idx 属性，便于事件代理
-            let html = ''
-            this.displayTokens.forEach((token, idx) => {
-                if (token.suggestion) {
-                    html += `<span class="suggestion" data-idx="${idx}">${token.text}</span>`
-                } else {
-                    html += `<span data-idx="${idx}">${token.text}</span>`
-                }
-                if (idx !== this.displayTokens.length - 1) html += ' '
-            })
-            this.editorHtml = html
         },
         onEditorMouseMove(e) {
             const target = e.target
@@ -227,13 +269,28 @@ createApp({
             }
         },
         applySuggestion(idx) {
-            const sug = this.displayTokens[idx].suggestion
+            // 找到当前 token 的 suggestion
+            const token = this.displayTokens[idx]
+            const sug = token.suggestion
             if (!sug) return
-            const tokens = this.displayTokens.map(t => t.text)
-            tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
+            let tokens = this.displayTokens.filter(t => !t.isVirtual).map(t => t.text)
+            // 根据 action 类型处理
+            if (sug.action === '$DELETE') {
+                // 删除 start~end 的 token
+                tokens.splice(sug.start, sug.end - sug.start)
+            } else if (sug.action.startsWith('$APPEND_')) {
+                // 在 end 位置插入 real_replacement
+                tokens.splice(sug.end, 0, sug.real_replacement)
+            } else if (sug.action.startsWith('$TRANSFORM_') || sug.action.startsWith('$REPLACE_')) {
+                // 替换 start~end 的 token
+                tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
+            } else {
+                // 其它操作，直接替换
+                tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
+            }
             this.inputText = tokens.join(' ')
-            this.renderTokens(this.inputText)
             this.actions = []
+            this.renderTokens(this.inputText)
         },
         onEnter() {
             this.checkGrammar()
@@ -244,7 +301,15 @@ createApp({
             if (this.tooltipIdx == null) return ''
             const token = this.displayTokens[this.tooltipIdx]
             if (!token || !token.suggestion) return ''
-            return `<b>Suggestion:</b> ${token.suggestion.replacement}<br>
+            // 展示 action 类型
+            let type = ''
+            if (token.suggestion.action === '$DELETE') type = 'Delete'
+            else if (token.suggestion.action.startsWith('$APPEND_')) type = 'Append'
+            else if (token.suggestion.action.startsWith('$TRANSFORM_')) type = 'Transform'
+            else if (token.suggestion.action.startsWith('$REPLACE_')) type = 'Replace'
+            else type = token.suggestion.action
+            return `<b>Type:</b> ${type}<br>
+<b>Suggestion:</b> ${token.suggestion.real_replacement}<br>
 <b>Confidence:</b> ${Math.round(token.suggestion.confidence * 100)}%<br>
 ${token.suggestion.action ? `<b>Action:</b> ${token.suggestion.action}<br>` : ''}
 <i>Click to apply</i>`
