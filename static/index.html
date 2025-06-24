@@ -230,7 +230,7 @@ createApp({
             const sug = this.displayTokens[idx].suggestion
             if (!sug) return
             const tokens = this.displayTokens.map(t => t.text)
-            tokens.splice(sug.start, sug.end - sug.start, sug.replacement)
+            tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
             this.inputText = tokens.join(' ')
             this.renderTokens(this.inputText)
             this.actions = []

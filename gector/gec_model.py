@@ -18,6 +18,7 @@ from gector.seq2labels_model import Seq2Labels
 from gector.tokenizer_indexer import PretrainedBertIndexer
 from utils.helpers import PAD, UNK, get_target_sent_by_edits, START_TOKEN
 from utils.helpers import get_weights_name
+from utils.helpers import apply_reverse_transformation  # 新增导入
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 logger = logging.getLogger(__file__)
@@ -318,13 +319,21 @@ class GecBERTModel(object):
             if action:
                 start, end, replacement, conf = action
                 edits.append((start, end, replacement, conf))
+                # 新增逻辑：判断replacement是否为占位符，如果是则用apply_reverse_transformation获取真实替换词
+                if replacement.startswith("$TRANSFORM_"):
+                    real_replacement = apply_reverse_transformation(
+                        tokens[start] if 0 <= start < len(tokens) else "", replacement
+                    )
+                else:
+                    real_replacement = replacement
                 actions.append({
                     "start": start,
                     "end": end,
                     "original": tokens[start] if 0 <= start < len(tokens) else "",
                     "action": sugg_token,
                     "replacement": replacement,
-                    "confidence": conf
+                    "confidence": conf,
+                    "real_replacement": real_replacement  # 新增字段
                 })
 
         return edits, actions
