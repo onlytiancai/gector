@@ -219,3 +219,91 @@ If you find this work is useful for your research, please cite our papers:
     pip install jsonnet==0.17.0
     pip install -r requirements.txt --prefer-binary
 
+## 文件介绍
+
+gector 目录下每个文件的简单介绍如下：
+
+1. **bert_token_embedder.py**
+   主要用于将BERT模型的分词嵌入（token embedding）集成到GEC（语法纠错）模型中，实现将文本输入转化为BERT的向量表示。
+
+2. **datareader.py**
+   用于读取和处理训练、验证、测试所需的数据文件，负责数据的加载、预处理和批处理等功能。
+
+3. **gec_model.py**
+   实现GEC（Grammatical Error Correction）模型的核心结构和前向传播等逻辑，是整个纠错模型的主要实现文件。
+
+4. **seq2labels_model.py**
+   实现将序列（文本）映射为标签的模型结构，是一种将序列标注问题建模为多标签分类的方法，常用于GEC任务。
+
+5. **tokenization.py**
+   负责文本的分词（tokenization）操作，将输入的原始文本分割成词或子词，便于后续模型处理。
+
+6. **tokenizer_indexer.py**
+   为分词器生成词索引（token index），用于把分词后的token映射到对应的词表索引，通常用于输入嵌入层。
+
+7. **trainer.py**
+   主要负责模型的训练过程，包括训练逻辑、损失计算、优化器设置、评估与保存模型等功能。
+
+如需了解某个文件的详细实现，可以指定文件名获取更深入的说明。
+
+## helper 介绍
+
+以下是 `utils/helpers.py` 文件中几个重要函数的作用介绍：
+
+### 1. `get_verb_form_dicts()`
+- **作用**: 加载动词形式的编码和解码字典。
+- **功能**: 从 `verb-form-vocab.txt` 文件中读取数据，生成两个字典：
+  - `encode`: 将动词形式映射到其标签。
+  - `decode`: 根据标签解码得到目标动词形式。
+- **用途**: 用于动词形式转换和预测。
+
+---
+
+### 2. `get_target_sent_by_edits(source_tokens, edits)`
+- **作用**: 根据编辑操作生成目标句子。
+- **功能**: 根据编辑列表对源句子进行处理，包括删除、添加、替换等操作。
+- **用途**: 应用各种编辑操作以生成目标文本。
+
+---
+
+### 3. `apply_reverse_transformation(source_token, transform)`
+- **作用**: 应用反向转换操作。
+- **功能**:
+  - 根据不同的转换类型（如大小写转换、动词形式转换、单复数转换等）处理单词。
+  - 如果没有匹配的转换类型，会抛出异常。
+- **用途**: 用于根据操作类型对单词进行反向转换。
+
+---
+
+### 4. `read_parallel_lines(fn1, fn2)`
+- **作用**: 读取两个文件中的平行内容。
+- **功能**: 从两个文件中读取对应行，过滤掉空行，并返回两个列表。
+- **用途**: 用于处理平行文件内容，如训练数据中的源句子和目标句子。
+
+---
+
+### 5. `normalize(sent)`
+- **作用**: 正规化句子。
+- **功能**:
+  - 移除重复的单词。
+  - 替换句子中的特定字符或标记。
+  - 将句子转换为小写。
+- **用途**: 清洗文本数据以用于后续处理。
+
+---
+
+### 6. `get_weights_name(transformer_name, lowercase)`
+- **作用**: 根据模型名称和大小写参数返回权重名称。
+- **功能**: 返回预定义的 Transformer 模型权重名称，并给出警告提示（如模型训练时是否大小写敏感）。
+- **用途**: 用于加载预训练模型权重。
+
+---
+
+### 7. `remove_double_tokens(sent)`
+- **作用**: 移除句子中重复的相邻词。
+- **功能**: 遍历句子中的单词，删除重复出现的相邻词。
+- **用途**: 清理文本以提高质量。
+
+---
+
+如果你还有其他函数需要具体介绍，请告诉我！
