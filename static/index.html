@@ -6,74 +6,251 @@
     <title>English Grammar Correction</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
+        body {
+            background: #f7f8fa;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
         .container {
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 0 20px;
+            max-width: 700px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 16px #0001;
+            padding: 32px 28px 24px 28px;
         }
-        textarea {
+        .header {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            color: #222;
+        }
+        .editor-area {
+            position: relative;
+            margin-bottom: 18px;
+        }
+        .editor {
+            min-height: 90px;
             width: 100%;
-            height: 100px;
-            margin: 10px 0;
+            border: 1.5px solid #c3c8d1;
+            border-radius: 8px;
+            padding: 14px 12px;
+            font-size: 1.1rem;
+            outline: none;
+            transition: border 0.2s;
+            background: #fafdff;
         }
-        .correction {
-            margin-top: 20px;
-            padding: 10px;
-            background: #f5f5f5;
+        .editor:focus {
+            border-color: #4f8cff;
+            background: #fff;
         }
-        .action {
-            margin: 5px 0;
-            padding: 5px;
-            border-bottom: 1px solid #eee;
+        .check-btn {
+            background: #4f8cff;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 22px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+        .check-btn:disabled {
+            background: #b3cfff;
+            cursor: not-allowed;
+        }
+        .suggestion {
+            background: #fffbe6;
+            border-bottom: 2px dotted #f7b500;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: background 0.15s;
+            position: relative;
+        }
+        .suggestion:hover {
+            background: #fff3c1;
+        }
+        .tooltip {
+            position: absolute;
+            z-index: 10;
+            left: 0;
+            top: 120%;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px #0002;
+            padding: 10px 14px;
+            min-width: 180px;
+            font-size: 0.98rem;
+            color: #222;
+            white-space: pre-line;
+        }
+        .actions-bar {
+            margin-top: 18px;
+            color: #888;
+            font-size: 0.98rem;
         }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
-        <h1>English Grammar Correction</h1>
-        <textarea v-model="sentence" placeholder="Enter your English sentence here..."></textarea>
-        <button @click="checkGrammar">Check Grammar</button>
-        
-        <div v-if="result" class="correction">
-            <h3>Original:</h3>
-            <p>{{ result.original }}</p>
-            <h3>Corrected:</h3>
-            <p>{{ result.corrected }}</p>
-            <h3>Actions:</h3>
-            <div class="action" v-for="action in result.actions">
-                <p>Change: {{ action.original }} → {{ action.replacement }}</p>
-                <p>Confidence: {{ Math.round(action.confidence * 100) }}%</p>
-            </div>
-        </div>
+<div id="app" class="container">
+    <div class="header">Grammar Correction (Grammarly Style)</div>
+    <div class="editor-area" style="position:relative;">
+        <div
+            class="editor"
+            contenteditable="true"
+            spellcheck="false"
+            ref="editor"
+            v-html="editorHtml"
+            @input="onInput"
+            @keydown.enter.prevent="onEnter"
+            @mousemove="onEditorMouseMove"
+            @mouseleave="hideTooltip"
+            @click="onEditorClick"
+        ></div>
+        <!-- tooltip 显示，放在 editor-area 内部，便于定位 -->
+        <div
+            v-if="tooltipIdx !== null"
+            :style="tooltipStyle"
+            class="tooltip"
+            v-html="tooltipContent"
+        ></div>
     </div>
+    <button class="check-btn" :disabled="loading || !inputText.trim()" @click="checkGrammar">
+        {{ loading ? 'Checking...' : 'Check Grammar' }}
+    </button>
+    <div class="actions-bar" v-if="actions && actions.length">
+        {{ actions.length }} suggestion{{ actions.length > 1 ? 's' : '' }} found.
+    </div>
+</div>
+<script>
+const { createApp, nextTick } = Vue
 
-    <script>
-        const { createApp } = Vue
-
-        createApp({
-            data() {
-                return {
-                    sentence: '',
-                    result: null
-                }
-            },
-            methods: {
-                async checkGrammar() {
-                    try {
-                        const response = await fetch('/api/actions', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ sentence: this.sentence })
-                        })
-                        this.result = await response.json()
-                    } catch (error) {
-                        console.error('Error:', error)
+createApp({
+    data() {
+        return {
+            inputText: '',
+            displayTokens: [],
+            actions: [],
+            loading: false,
+            tooltipIdx: null,
+            tooltipStyle: {},
+            editorHtml: ''
+        }
+    },
+    mounted() {
+        this.inputText = 'the list of item are on the table since yesterday.'
+        this.renderTokens(this.inputText)
+    },
+    methods: {
+        onInput(e) {
+            this.inputText = this.getEditorText()
+            this.renderTokens(this.inputText)
+        },
+        getEditorText() {
+            // Get plain text from contenteditable
+            return this.$refs.editor.innerText.replace(/\s+/g, ' ').trim()
+        },
+        renderTokens(text) {
+            const tokens = text.split(' ').filter(t => t.length)
+            this.displayTokens = tokens.map(t => ({ text: t }))
+            this.updateEditorHtml()
+        },
+        async checkGrammar() {
+            this.loading = true
+            this.tooltipIdx = null
+            try {
+                const resp = await fetch('/api/actions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sentence: this.inputText })
+                })
+                const result = await resp.json()
+                this.actions = result.actions || []
+                const tokens = result.original.split(' ')
+                let displayTokens = tokens.map(t => ({ text: t }))
+                for (const act of this.actions) {
+                    for (let i = act.start; i < act.end; ++i) {
+                        displayTokens[i] = {
+                            ...displayTokens[i],
+                            suggestion: act
+                        }
                     }
                 }
+                this.displayTokens = displayTokens
+                this.updateEditorHtml()
+            } finally {
+                this.loading = false
             }
-        }).mount('#app')
-    </script>
+        },
+        updateEditorHtml() {
+            // 为每个 token 添加 data-idx 属性，便于事件代理
+            let html = ''
+            this.displayTokens.forEach((token, idx) => {
+                if (token.suggestion) {
+                    html += `<span class="suggestion" data-idx="${idx}">${token.text}</span>`
+                } else {
+                    html += `<span data-idx="${idx}">${token.text}</span>`
+                }
+                if (idx !== this.displayTokens.length - 1) html += ' '
+            })
+            this.editorHtml = html
+        },
+        onEditorMouseMove(e) {
+            const target = e.target
+            if (target.classList && target.classList.contains('suggestion')) {
+                const idx = Number(target.getAttribute('data-idx'))
+                if (this.tooltipIdx !== idx) {
+                    this.tooltipIdx = idx
+                    // 计算 tooltip 相对于 editor-area 的偏移
+                    const editorArea = this.$el.querySelector('.editor-area')
+                    const areaRect = editorArea.getBoundingClientRect()
+                    const rect = target.getBoundingClientRect()
+                    this.tooltipStyle = {
+                        position: 'absolute',
+                        left: (rect.left - areaRect.left) + 'px',
+                        top: (rect.bottom - areaRect.top + 6) + 'px'
+                    }
+                }
+            } else {
+                this.hideTooltip()
+            }
+        },
+        hideTooltip() {
+            this.tooltipIdx = null
+        },
+        onEditorClick(e) {
+            const target = e.target
+            if (target.classList && target.classList.contains('suggestion')) {
+                const idx = Number(target.getAttribute('data-idx'))
+                this.applySuggestion(idx)
+            }
+        },
+        applySuggestion(idx) {
+            const sug = this.displayTokens[idx].suggestion
+            if (!sug) return
+            const tokens = this.displayTokens.map(t => t.text)
+            tokens.splice(sug.start, sug.end - sug.start, sug.replacement)
+            this.inputText = tokens.join(' ')
+            this.renderTokens(this.inputText)
+            this.actions = []
+        },
+        onEnter() {
+            this.checkGrammar()
+        }
+    },
+    computed: {
+        tooltipContent() {
+            if (this.tooltipIdx == null) return ''
+            const token = this.displayTokens[this.tooltipIdx]
+            if (!token || !token.suggestion) return ''
+            return `<b>Suggestion:</b> ${token.suggestion.replacement}<br>
+<b>Confidence:</b> ${Math.round(token.suggestion.confidence * 100)}%<br>
+${token.suggestion.action ? `<b>Action:</b> ${token.suggestion.action}<br>` : ''}
+<i>Click to apply</i>`
+        }
+    }
+}).mount('#app')
+</script>
 </body>
 </html>
