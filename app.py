@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from gector.gec_model import GecBERTModel
 from utils.helpers import get_target_sent_by_edits
+import os
 
 app = Flask(__name__)
 
@@ -44,6 +45,10 @@ def get_actions():
         "actions": actions
     })
 
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
+
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(port=5000, debug=True)
 
