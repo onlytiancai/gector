@@ -138,9 +138,10 @@ class PretrainedBertIndexer(TokenizerIndexer):
                            "but your indexer is not lowercasing tokens.")
 
         model_name = copy.deepcopy(pretrained_model)
-
+        print('AutoTokenizer.from_pretrained', model_name)
         model_tokenizer = AutoTokenizer.from_pretrained(
-            model_name, do_lower_case=do_lowercase, do_basic_tokenize=False, use_fast=True)
+            'models/roberta-base-local', 
+            do_lower_case=do_lowercase, do_basic_tokenize=False, use_fast=True)
 
         # to adjust all tokenizers
         if hasattr(model_tokenizer, 'encoder'):
