@@ -204,3 +204,18 @@ If you find this work is useful for your research, please cite our papers:
 
     curl -s -X POST http://localhost:5000/api/actions   -H "Content-Type: application/json"   -d '{"sentence": "the list of item are on the table since yesterday."}'  | jq
 
+## install
+
+    mkdir -p models/roberta
+    wget https://grammarly-nlp-data-public.s3.amazonaws.com/gector/roberta_1_gectorv2.th -O models/roberta/roberta_1_gectorv2.th
+
+    curl https://pyenv.run | bash
+
+    pyenv install 3.7.10
+    pyenv virtualenv 3.7.10 gector
+    pyenv activate gector
+
+    pip install --upgrade pip setuptools wheel
+    pip install jsonnet==0.17.0
+    pip install -r requirements.txt --prefer-binary
+
