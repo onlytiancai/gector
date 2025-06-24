@@ -296,3 +296,36 @@ class GecBERTModel(object):
                 break
 
         return final_batch, total_updates
+
+    def extract_edits(self, tokens, probabilities, idxs, error_prob):
+        edits = []
+        actions = []
+        noop_index = self.vocab.get_token_index("$KEEP", "labels")
+
+        length = min(len(tokens), self.max_len)
+
+        if max(idxs) == 0 or error_prob < self.min_error_probability:
+            return edits, actions
+
+        for i in range(length + 1):
+            token = START_TOKEN if i == 0 else tokens[i - 1]
+
+            if idxs[i] == noop_index:
+                continue
+
+            sugg_token = self.vocab.get_token_from_index(idxs[i], namespace='labels')
+            action = self.get_token_action(token, i, probabilities[i], sugg_token)
+            if action:
+                start, end, replacement, conf = action
+                edits.append((start, end, replacement, conf))
+                actions.append({
+                    "start": start,
+                    "end": end,
+                    "original": tokens[start] if 0 <= start < len(tokens) else "",
+                    "action": sugg_token,
+                    "replacement": replacement,
+                    "confidence": conf
+                })
+
+        return edits, actions
+
