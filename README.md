@@ -178,3 +178,29 @@ If you find this work is useful for your research, please cite our papers:
     abstract = "Edit-based approaches have recently shown promising results on multiple monolingual sequence transduction tasks. In contrast to conventional sequence-to-sequence (Seq2Seq) models, which learn to generate text from scratch as they are trained on parallel corpora, these methods have proven to be much more effective since they are able to learn to make fast and accurate transformations while leveraging powerful pre-trained language models. Inspired by these ideas, we present TST, a simple and efficient Text Simplification system based on sequence Tagging, leveraging pre-trained Transformer-based encoders. Our system makes simplistic data augmentations and tweaks in training and inference on a pre-existing system, which makes it less reliant on large amounts of parallel training data, provides more control over the outputs and enables faster inference speeds. Our best model achieves near state-of-the-art performance on benchmark test datasets for the task. Since it is fully non-autoregressive, it achieves faster inference speeds by over 11 times than the current state-of-the-art text simplification system.",
 }
 ```
+---
+
+## 离线使用 `roberta-base`
+
+    >>> from huggingface_hub import snapshot_download
+    >>> snapshot_download(repo_id="roberta-base", local_dir="./models/roberta-base-local")
+
+
+
+    $ git diff gector/tokenizer_indexer.py
+
+            model_name = copy.deepcopy(pretrained_model)
+            model_tokenizer = AutoTokenizer.from_pretrained(
+    -            model_name, do_lower_case=do_lowercase, do_basic_tokenize=False, use_fast=True)
+    +            'models/roberta-base-local',
+    +            do_lower_case=do_lowercase, do_basic_tokenize=False, use_fast=True)
+
+            # to adjust all tokenizers
+            if hasattr(model_tokenizer, 'encoder'):
+
+    TRANSFORMERS_OFFLINE=1 python app.py
+
+## 测试 web api
+
+    curl -s -X POST http://localhost:5000/api/actions   -H "Content-Type: application/json"   -d '{"sentence": "the list of item are on the table since yesterday."}'  | jq
+
