@@ -199,8 +199,7 @@
                     <span v-else>{{ act.action }}</span>
                 </div>
                 <div><b>Original:</b> <i>{{ act.original }}</i></div>
-                <div><b>Suggestion:</b> <i>{{ act.replacement }}</i></div>
-                <div><b>Real Replacement:</b> <i>{{ act.real_replacement }}</i></div>
+                <div><b>Suggestion:</b> <i>{{ act.real_replacement }}</i></div>    
                 <div><b>Confidence:</b> {{ Math.round(act.confidence * 100) }}%</div>
                 <div v-if="act.action"><b>Action:</b> {{ act.action }}</div>
                 <div style="color:#888;font-size:0.95em;"><i>Click to apply</i></div>
