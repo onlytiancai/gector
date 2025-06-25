@@ -196,6 +196,18 @@
         <div class="actions-bar" v-else>
             <span style="color:#27ae60;font-weight:600;">Grammar is correct!</span>
         </div>
+        <!-- history 列表 -->
+        <div style="margin-top:28px;">
+            <div style="font-weight:bold;margin-bottom:6px;">History (last 10)</div>
+            <div v-if="historyList.length === 0" style="color:#aaa;">No history yet.</div>
+            <div v-for="(h, idx) in historyList" :key="idx" style="display:flex;align-items:center;margin-bottom:4px;">
+                <button
+                    style="margin-right:8px;padding:2px 10px;border-radius:4px;border:none;background:#eee;cursor:pointer;font-size:0.98em;"
+                    @click="applyHistory(idx)"
+                >Use</button>
+                <span style="white-space:pre-wrap;word-break:break-all;color:#555;">{{ h }}</span>
+            </div>
+        </div>
     </div>
     <!-- 侧栏紧挨主文本框右侧 -->
     <div class="sidebar" v-if="actions && actions.length">
@@ -249,6 +261,11 @@ createApp({
     computed: {
         canUndo() {
             return this.undoStack.length > 0
+        },
+        historyList() {
+            // 倒序显示最近10条，最新的在最上面
+            if (!this.undoStack.length) return []
+            return this.undoStack.slice(-10).reverse()
         }
     },
     mounted() {
@@ -350,7 +367,8 @@ createApp({
             this.pushUndo()
             const act = this.actions[actionIdx]
             if (!act) return
-            let tokens = this.displayTokens.filter(t => !t.isVirtual).map(t => t.text)
+            // 以当前 inputText 分词，保证用户中间修改不会丢失
+            let tokens = this.inputText.split(' ').filter(t => t.length)
             if (act.action === '$DELETE') {
                 tokens.splice(act.start, act.end - act.start)
             } else if (act.action.startsWith('$APPEND_')) {
@@ -402,6 +420,18 @@ createApp({
                 // 最多保存 20 步
                 if (this.undoStack.length >= 20) this.undoStack.shift()
                 this.undoStack.push(this.inputText)
+                // 保证undoStack最多20条，historyList最多10条
+                if (this.undoStack.length > 20) this.undoStack = this.undoStack.slice(-20)
+            }
+        },
+        applyHistory(idx) {
+            // idx为historyList中的索引（倒序），需映射到undoStack
+            const h = this.historyList[idx]
+            if (typeof h === 'string') {
+                this.inputText = h
+                this.actions = []
+                this.renderTokens(this.inputText)
+                this.checkGrammar()
             }
         },
         undo() {
