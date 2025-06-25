@@ -255,7 +255,9 @@ createApp({
             loading: false,
             editorHtml: '',
             hoveredSidebarIdx: null,
-            undoStack: [] // 用于撤销
+            undoStack: [], // 用于撤销
+            lastSentences: [], // 上次分句内容及位置
+            lastActionsBySentenceIdx: {} // 上次每句的actions
         }
     },
     computed: {
@@ -338,7 +340,6 @@ createApp({
                 const sentences = []
                 const sentenceRegex = /[^.?!]+[.?!]?/g
                 let match
-                let lastIdx = 0
                 while ((match = sentenceRegex.exec(this.inputText)) !== null) {
                     const sentence = match[0].trim()
                     if (sentence) {
@@ -357,21 +358,35 @@ createApp({
                     tokenOffsets.push(charIdx)
                     charIdx += allTokens[i].length + 1 // +1 for space
                 }
-                // 3. 对每个句子调用API
+                // 3. 找出被修改的句子
+                let lastSentences = this.lastSentences || []
+                let lastActionsBySentenceIdx = this.lastActionsBySentenceIdx || {}
+                let changedIdxs = []
+                for (let i = 0; i < sentences.length; ++i) {
+                    if (
+                        !lastSentences[i] ||
+                        lastSentences[i].text !== sentences[i].text
+                    ) {
+                        changedIdxs.push(i)
+                    }
+                }
+                // 4. 对被修改的句子调用API，其余复用
                 let allActions = []
                 let sentenceTokenStart = 0
-                for (const s of sentences) {
+                let newActionsBySentenceIdx = {}
+                for (let i = 0; i < sentences.length; ++i) {
+                    const s = sentences[i]
                     // 计算该句子在token中的起止
                     let sentStartToken = -1, sentEndToken = -1
-                    for (let i = sentenceTokenStart; i < allTokens.length; ++i) {
-                        if (tokenOffsets[i] >= s.startChar) {
-                            sentStartToken = i
+                    for (let j = sentenceTokenStart; j < allTokens.length; ++j) {
+                        if (tokenOffsets[j] >= s.startChar) {
+                            sentStartToken = j
                             break
                         }
                     }
-                    for (let i = sentStartToken; i < allTokens.length; ++i) {
-                        if (tokenOffsets[i] >= s.endChar) {
-                            sentEndToken = i
+                    for (let j = sentStartToken; j < allTokens.length; ++j) {
+                        if (tokenOffsets[j] >= s.endChar) {
+                            sentEndToken = j
                             break
                         }
                     }
@@ -379,29 +394,45 @@ createApp({
                     if (sentEndToken === -1) sentEndToken = allTokens.length
                     const sentTokens = allTokens.slice(sentStartToken, sentEndToken)
                     const sentText = sentTokens.join(' ')
-                    // 调用API
-                    // eslint-disable-next-line no-await-in-loop
-                    const resp = await fetch('/api/actions', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sentence: sentText })
-                    })
-                    // eslint-disable-next-line no-await-in-loop
-                    const result = await resp.json()
-                    // 修正actions的start/end
-                    if (result.actions && Array.isArray(result.actions)) {
-                        result.actions.forEach(act => {
-                            const newAct = { ...act }
-                            newAct.start = (act.start ?? 0) + sentStartToken
-                            newAct.end = (act.end ?? 0) + sentStartToken
-                            allActions.push(newAct)
+                    let actions = []
+                    if (changedIdxs.includes(i)) {
+                        // eslint-disable-next-line no-await-in-loop
+                        const resp = await fetch('/api/actions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sentence: sentText })
+                        })
+                        // eslint-disable-next-line no-await-in-loop
+                        const result = await resp.json()
+                        if (result.actions && Array.isArray(result.actions)) {
+                            actions = result.actions.map(act => {
+                                const newAct = { ...act }
+                                newAct.start = (act.start ?? 0) + sentStartToken
+                                newAct.end = (act.end ?? 0) + sentStartToken
+                                return newAct
+                            })
+                        }
+                    } else if (lastActionsBySentenceIdx[i]) {
+                        // 复用上次actions，修正start
+                        actions = lastActionsBySentenceIdx[i].map(act => {
+                            const offset = sentStartToken - (lastSentences[i]?.tokenStart ?? 0)
+                            return {
+                                ...act,
+                                start: act.start + offset,
+                                end: act.end + offset
+                            }
                         })
                     }
+                    newActionsBySentenceIdx[i] = actions
+                    allActions.push(...actions)
+                    // 记录本句token起始
+                    s.tokenStart = sentStartToken
                     sentenceTokenStart = sentEndToken
                 }
                 this.actions = allActions
+                this.lastSentences = sentences.map(s => ({ ...s }))
+                this.lastActionsBySentenceIdx = newActionsBySentenceIdx
                 this.renderTokens(this.inputText)
-                // 保持inputText为原文
             } finally {
                 this.loading = false
             }
