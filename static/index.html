@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>English Grammar Correction</title>
+    <title>Grammar Correction</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
         body {
@@ -73,24 +73,6 @@
             transition: background 0.15s;
             position: relative;
         }
-        .suggestion:hover {
-            background: #fff3c1;
-        }
-        .tooltip {
-            position: absolute;
-            z-index: 10;
-            left: 0;
-            top: 120%;
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            box-shadow: 0 2px 8px #0002;
-            padding: 10px 14px;
-            min-width: 180px;
-            font-size: 0.98rem;
-            color: #222;
-            white-space: pre-line;
-        }
         .actions-bar {
             margin-top: 18px;
             color: #888;
@@ -158,16 +140,7 @@
                 v-html="editorHtml"
                 @input="onInput"
                 @keydown.enter.prevent="onEnter"
-                @mousemove="onEditorMouseMove"
-                @mouseleave="hideTooltip"
                 @click="onEditorClick"
-            ></div>
-            <!-- tooltip 显示，放在 editor-area 内部，便于定位 -->
-            <div
-                v-if="tooltipIdx !== null"
-                :style="tooltipStyle"
-                class="tooltip"
-                v-html="tooltipContent"
             ></div>
         </div>
         <button class="check-btn" :disabled="loading || !inputText.trim()" @click="checkGrammar">
@@ -217,8 +190,6 @@ createApp({
             displayTokens: [],
             actions: [],
             loading: false,
-            tooltipIdx: null,
-            tooltipStyle: {},
             editorHtml: ''
         }
     },
@@ -303,7 +274,6 @@ createApp({
         },
         async checkGrammar() {
             this.loading = true
-            this.tooltipIdx = null
             try {
                 const resp = await fetch('/api/actions', {
                     method: 'POST',
@@ -317,29 +287,6 @@ createApp({
             } finally {
                 this.loading = false
             }
-        },
-        onEditorMouseMove(e) {
-            const target = e.target
-            if (target.classList && target.classList.contains('suggestion')) {
-                const idx = Number(target.getAttribute('data-idx'))
-                if (this.tooltipIdx !== idx) {
-                    this.tooltipIdx = idx
-                    // 计算 tooltip 相对于 editor-area 的偏移
-                    const editorArea = this.$el.querySelector('.editor-area')
-                    const areaRect = editorArea.getBoundingClientRect()
-                    const rect = target.getBoundingClientRect()
-                    this.tooltipStyle = {
-                        position: 'absolute',
-                        left: (rect.left - areaRect.left) + 'px',
-                        top: (rect.bottom - areaRect.top + 6) + 'px'
-                    }
-                }
-            } else {
-                this.hideTooltip()
-            }
-        },
-        hideTooltip() {
-            this.tooltipIdx = null
         },
         onEditorClick(e) {
             const target = e.target
@@ -396,25 +343,6 @@ createApp({
             this.checkGrammar()
         }
     },
-    computed: {
-        tooltipContent() {
-            if (this.tooltipIdx == null) return ''
-            const token = this.displayTokens[this.tooltipIdx]
-            if (!token || !token.suggestion) return ''
-            // 展示 action 类型
-            let type = ''
-            if (token.suggestion.action === '$DELETE') type = 'Delete'
-            else if (token.suggestion.action.startsWith('$APPEND_')) type = 'Append'
-            else if (token.suggestion.action.startsWith('$TRANSFORM_')) type = 'Transform'
-            else if (token.suggestion.action.startsWith('$REPLACE_')) type = 'Replace'
-            else type = token.suggestion.action
-            return `<b>Type:</b> ${type}<br>
-<b>Suggestion:</b> ${token.suggestion.real_replacement}<br>
-<b>Confidence:</b> ${Math.round(token.suggestion.confidence * 100)}%<br>
-${token.suggestion.action ? `<b>Action:</b> ${token.suggestion.action}<br>` : ''}
-<i>Click to apply</i>`
-        }
-    }
 }).mount('#app')
 </script>
 </body>
