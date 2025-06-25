@@ -269,7 +269,7 @@ createApp({
         }
     },
     mounted() {
-        this.inputText = 'the list of item are on the table since yesterday.'
+        this.inputText = 'the list of item are on the table since yesterday. my name is lili.'
         this.renderTokens(this.inputText)
         // 页面加载后如果输入框有文字，自动检测一次语法
         if (this.inputText && this.inputText.trim()) {
@@ -334,15 +334,74 @@ createApp({
             this.pushUndo()
             this.loading = true
             try {
-                const resp = await fetch('/api/actions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sentence: this.inputText })
-                })
-                const result = await resp.json()
-                this.actions = result.actions || []
-                this.renderTokens(result.original)
-                this.inputText = result.original
+                // 1. 分句
+                const sentences = []
+                const sentenceRegex = /[^.?!]+[.?!]?/g
+                let match
+                let lastIdx = 0
+                while ((match = sentenceRegex.exec(this.inputText)) !== null) {
+                    const sentence = match[0].trim()
+                    if (sentence) {
+                        sentences.push({
+                            text: sentence,
+                            startChar: match.index,
+                            endChar: match.index + match[0].length
+                        })
+                    }
+                }
+                // 2. 计算每个句子的token偏移
+                const allTokens = this.inputText.split(' ').filter(t => t.length)
+                let tokenOffsets = []
+                let charIdx = 0
+                for (let i = 0; i < allTokens.length; ++i) {
+                    tokenOffsets.push(charIdx)
+                    charIdx += allTokens[i].length + 1 // +1 for space
+                }
+                // 3. 对每个句子调用API
+                let allActions = []
+                let sentenceTokenStart = 0
+                for (const s of sentences) {
+                    // 计算该句子在token中的起止
+                    let sentStartToken = -1, sentEndToken = -1
+                    for (let i = sentenceTokenStart; i < allTokens.length; ++i) {
+                        if (tokenOffsets[i] >= s.startChar) {
+                            sentStartToken = i
+                            break
+                        }
+                    }
+                    for (let i = sentStartToken; i < allTokens.length; ++i) {
+                        if (tokenOffsets[i] >= s.endChar) {
+                            sentEndToken = i
+                            break
+                        }
+                    }
+                    if (sentStartToken === -1) sentStartToken = 0
+                    if (sentEndToken === -1) sentEndToken = allTokens.length
+                    const sentTokens = allTokens.slice(sentStartToken, sentEndToken)
+                    const sentText = sentTokens.join(' ')
+                    // 调用API
+                    // eslint-disable-next-line no-await-in-loop
+                    const resp = await fetch('/api/actions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sentence: sentText })
+                    })
+                    // eslint-disable-next-line no-await-in-loop
+                    const result = await resp.json()
+                    // 修正actions的start/end
+                    if (result.actions && Array.isArray(result.actions)) {
+                        result.actions.forEach(act => {
+                            const newAct = { ...act }
+                            newAct.start = (act.start ?? 0) + sentStartToken
+                            newAct.end = (act.end ?? 0) + sentStartToken
+                            allActions.push(newAct)
+                        })
+                    }
+                    sentenceTokenStart = sentEndToken
+                }
+                this.actions = allActions
+                this.renderTokens(this.inputText)
+                // 保持inputText为原文
             } finally {
                 this.loading = false
             }
