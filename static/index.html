@@ -180,7 +180,7 @@
                 ref="editor"
                 v-html="editorHtml"
                 @input="onInput"
-                @keydown.enter.prevent="onEnter"
+                @keydown.enter.stop
                 @click="onEditorClick"
             ></div>
         </div>
@@ -252,8 +252,9 @@ createApp({
     },
     methods: {
         onInput(e) {
+            // 只更新 inputText，不再立即 renderTokens，避免光标跳动
             this.inputText = this.getEditorText()
-            this.renderTokens(this.inputText)
+            // 不调用 this.renderTokens(this.inputText)
         },
         getEditorText() {
             // Get plain text from contenteditable
@@ -300,20 +301,6 @@ createApp({
             }
             this.updateEditorHtml()
         },
-        updateEditorHtml() {
-            // 为每个 token 添加 data-idx 属性，便于事件代理
-            let html = ''
-            this.displayTokens.forEach((token, idx) => {
-                if (token.suggestion) {
-                    // 不改变单词样式，仅在下方加下划线
-                    html += `<span class="suggestion" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
-                } else {
-                    html += `<span data-idx="${idx}">${token.text}</span>`
-                }
-                if (idx !== this.displayTokens.length - 1) html += ' '
-            })
-            this.editorHtml = html
-        },
         async checkGrammar() {
             this.loading = true
             try {
@@ -326,6 +313,8 @@ createApp({
                 this.actions = result.actions || []
                 // 直接用原始文本和 actions 渲染
                 this.renderTokens(result.original)
+                // 检查后同步 inputText，避免内容不同步
+                this.inputText = result.original
             } finally {
                 this.loading = false
             }
@@ -364,8 +353,33 @@ createApp({
             this.renderTokens(this.inputText)
             this.checkGrammar()
         },
+        updateEditorHtml() {
+            // 只在 checkGrammar 或 applySidebarSuggestion 后调用
+            let html = ''
+            this.displayTokens.forEach((token, idx) => {
+                if (token.suggestion) {
+                    html += `<span class="suggestion" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
+                } else {
+                    html += `<span data-idx="${idx}">${token.text}</span>`
+                }
+                if (idx !== this.displayTokens.length - 1) html += ' '
+            })
+            this.editorHtml = html
+            // 重新渲染后将光标移到末尾
+            this.$nextTick(() => {
+                const el = this.$refs.editor
+                if (el && document.activeElement === el) {
+                    const range = document.createRange()
+                    range.selectNodeContents(el)
+                    range.collapse(false)
+                    const sel = window.getSelection()
+                    sel.removeAllRanges()
+                    sel.addRange(range)
+                }
+            })
+        },
         onEnter() {
-            this.checkGrammar()
+            // 不再自动触发语法检测，也不阻止换行
         }
     },
 }).mount('#app')
