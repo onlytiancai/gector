@@ -66,12 +66,20 @@
             cursor: not-allowed;
         }
         .suggestion {
-            background: #fffbe6;
-            border-bottom: 2px dotted #f7b500;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: background 0.15s;
             position: relative;
+            display: inline-block;
+        }
+        .underline {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -2px;
+            height: 2px;
+            background: linear-gradient(to right, #f7b500 60%, transparent 0%);
+            background-size: 6px 2px;
+            background-repeat: repeat-x;
+            border-radius: 1px;
+            pointer-events: none;
         }
         .actions-bar {
             margin-top: 18px;
@@ -121,9 +129,42 @@
             transition: background 0.15s;
             font-size: 0.98rem;
             margin-bottom: 4px;
+            position: relative;
         }
         .sidebar-item:hover {
             background: #fff3c1;
+        }
+        .apply-btn {
+            display: none;
+            position: absolute;
+            right: 12px;
+            top: 10px;
+            background: #4f8cff;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 3px 12px;
+            font-size: 0.97em;
+            cursor: pointer;
+            font-weight: 600;
+            z-index: 2;
+            transition: background 0.18s;
+        }
+        .sidebar-item:hover .apply-btn {
+            display: inline-block;
+        }
+        .apply-btn:active {
+            background: #2562c7;
+        }
+        .sidebar-item.active,
+        .sidebar-item[data-active="true"] {
+            background: #e6f0ff !important;
+            border-left-color: #4f8cff !important;
+            /* 可选：让 Apply 按钮常显 */
+        }
+        .sidebar-item.active .apply-btn,
+        .sidebar-item[data-active="true"] .apply-btn {
+            display: inline-block;
         }
     </style>
 </head>
@@ -161,7 +202,9 @@
                 v-for="(act, idx) in actions"
                 :key="idx"
                 class="sidebar-item"
-                @click="applySidebarSuggestion(idx)"
+                :data-active="hoveredSidebarIdx === idx"
+                @mouseenter="hoveredSidebarIdx = idx"
+                @mouseleave="hoveredSidebarIdx = null"
             >
                 <div>
                     <b>Type:</b>
@@ -175,7 +218,12 @@
                 <div><b>Suggestion:</b> <i>{{ act.real_replacement }}</i></div>    
                 <div><b>Confidence:</b> {{ Math.round(act.confidence * 100) }}%</div>
                 <div v-if="act.action"><b>Action:</b> {{ act.action }}</div>
-                <div style="color:#888;font-size:0.95em;"><i>Click to apply</i></div>
+                <div style="color:#888;font-size:0.95em;"><i>Click Apply to fix</i></div>
+                <button
+                    class="apply-btn"
+                    v-if="hoveredSidebarIdx === idx"
+                    @click="applySidebarSuggestion(idx)"
+                >Apply</button>
             </div>
         </div>
     </div>
@@ -190,7 +238,8 @@ createApp({
             displayTokens: [],
             actions: [],
             loading: false,
-            editorHtml: ''
+            editorHtml: '',
+            hoveredSidebarIdx: null
         }
     },
     mounted() {
@@ -213,40 +262,36 @@ createApp({
         renderTokens(text) {
             // 先按空格分词
             const tokens = text.split(' ').filter(t => t.length)
-            // 为每个 token 构建对象
             this.displayTokens = tokens.map(t => ({ text: t }))
-            // 如果有 actions，则标记涉及的 token
             if (this.actions && this.actions.length) {
-                // 标记每个 token 是否涉及建议
                 this.actions.forEach((act, i) => {
-                    // 删除操作: 高亮被删除的 token
                     if (act.action === '$DELETE') {
                         for (let idx = act.start; idx < act.end; ++idx) {
                             if (this.displayTokens[idx]) {
                                 this.displayTokens[idx] = {
                                     ...this.displayTokens[idx],
                                     suggestion: act,
-                                    suggestionType: 'delete'
+                                    suggestionType: 'delete',
+                                    actionIdx: i // 记录建议在actions中的索引
                                 }
                             }
                         }
-                    // 追加操作: 在指定位置后插入一个虚拟 token 用于显示追加内容
                     } else if (act.action.startsWith('$APPEND_')) {
-                        // 追加内容显示在 end 位置（即 start 后面）
                         this.displayTokens.splice(act.end, 0, {
                             text: act.real_replacement,
                             suggestion: act,
                             suggestionType: 'append',
-                            isVirtual: true // 标记为虚拟 token
+                            isVirtual: true,
+                            actionIdx: i
                         })
-                    // 其它操作（替换、变形等）: 高亮被替换的 token
                     } else {
                         for (let idx = act.start; idx < act.end; ++idx) {
                             if (this.displayTokens[idx]) {
                                 this.displayTokens[idx] = {
                                     ...this.displayTokens[idx],
                                     suggestion: act,
-                                    suggestionType: 'replace'
+                                    suggestionType: 'replace',
+                                    actionIdx: i
                                 }
                             }
                         }
@@ -260,11 +305,8 @@ createApp({
             let html = ''
             this.displayTokens.forEach((token, idx) => {
                 if (token.suggestion) {
-                    // 不同类型高亮不同样式
-                    let cls = 'suggestion'
-                    if (token.suggestionType === 'delete') cls += ' suggestion-delete'
-                    if (token.suggestionType === 'append') cls += ' suggestion-append'
-                    html += `<span class="${cls}" data-idx="${idx}">${token.text}</span>`
+                    // 不改变单词样式，仅在下方加下划线
+                    html += `<span class="suggestion" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
                 } else {
                     html += `<span data-idx="${idx}">${token.text}</span>`
                 }
@@ -289,39 +331,22 @@ createApp({
             }
         },
         onEditorClick(e) {
+            // 若点击了错误单词，则高亮对应侧栏item
             const target = e.target
             if (target.classList && target.classList.contains('suggestion')) {
                 const idx = Number(target.getAttribute('data-idx'))
-                this.applySuggestion(idx)
+                const token = this.displayTokens[idx]
+                if (token && typeof token.actionIdx === 'number') {
+                    this.hoveredSidebarIdx = token.actionIdx
+
+                }
             }
         },
         applySuggestion(idx) {
-            // 找到当前 token 的 suggestion
-            const token = this.displayTokens[idx]
-            const sug = token.suggestion
-            if (!sug) return
-            let tokens = this.displayTokens.filter(t => !t.isVirtual).map(t => t.text)
-            // 根据 action 类型处理
-            if (sug.action === '$DELETE') {
-                // 删除 start~end 的 token
-                tokens.splice(sug.start, sug.end - sug.start)
-            } else if (sug.action.startsWith('$APPEND_')) {
-                // 在 end 位置插入 real_replacement
-                tokens.splice(sug.end, 0, sug.real_replacement)
-            } else if (sug.action.startsWith('$TRANSFORM_') || sug.action.startsWith('$REPLACE_')) {
-                // 替换 start~end 的 token
-                tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
-            } else {
-                // 其它操作，直接替换
-                tokens.splice(sug.start, sug.end - sug.start, sug.real_replacement)
-            }
-            this.inputText = tokens.join(' ')
-            this.actions = []
-            this.renderTokens(this.inputText)
-            this.checkGrammar()
+            // 保留但不再被调用
         },
         applySidebarSuggestion(actionIdx) {
-            // 侧栏点击应用建议
+            // 侧栏点击“Apply”按钮才应用建议
             const act = this.actions[actionIdx]
             if (!act) return
             let tokens = this.displayTokens.filter(t => !t.isVirtual).map(t => t.text)
