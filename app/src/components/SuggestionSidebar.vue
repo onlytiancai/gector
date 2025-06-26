@@ -53,13 +53,11 @@ const props = defineProps({
   position: static;
   margin-left: 36px;
   width: 320px;
-  max-height: 70vh;
   background: #fafdff;
   border: 1.5px solid #c3c8d1;
   border-radius: 10px;
   box-shadow: 0 2px 12px #0001;
   padding: 16px 14px 12px 14px;
-  overflow-y: auto;
   z-index: 1;
 }
 .sidebar-title {
@@ -72,9 +70,11 @@ const props = defineProps({
   margin-bottom: 10px;
 }
 .sidebar-list {
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 50vh;
 }
 .sidebar-item {
   background: #fffbe6;
