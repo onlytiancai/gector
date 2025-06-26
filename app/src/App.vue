@@ -1,5 +1,8 @@
 <script setup>
 import { ref, computed, nextTick, onMounted } from 'vue'
+import EditorArea from './components/EditorArea.vue'
+import SuggestionSidebar from './components/SuggestionSidebar.vue'
+import HistoryList from './components/HistoryList.vue'
 
 const inputText = ref('')
 const displayTokens = ref([])
@@ -256,18 +259,11 @@ function undo() {
   <div id="app" class="container">
     <div style="flex:1;min-width:0;">
       <div class="header">Wawa Grammar Correction</div>
-      <div class="editor-area">
-        <div
-          class="editor"
-          contenteditable="true"
-          spellcheck="false"
-          ref="editor"
-          v-html="editorHtml"
-          @input="onInput"
-          @keydown.enter.stop
-          @click="onEditorClick"
-        ></div>
-      </div>
+      <EditorArea
+        :editorHtml="editorHtml"
+        @input="onInput"
+        @editorClick="onEditorClick"
+      />
       <button class="check-btn" :disabled="loading || !inputText.trim()" @click="checkGrammar">
         {{ loading ? 'Checking...' : 'Check Grammar' }}
       </button>
@@ -280,50 +276,14 @@ function undo() {
       <div class="actions-bar" v-else>
         <span style="color:#27ae60;font-weight:600;">Grammar is correct!</span>
       </div>
-      <div style="margin-top:28px;">
-        <div style="font-weight:bold;margin-bottom:6px;">History (last 10)</div>
-        <div v-if="historyList.length === 0" style="color:#aaa;">No history yet.</div>
-        <div v-for="(h, idx) in historyList" :key="idx" style="display:flex;align-items:center;margin-bottom:4px;">
-          <button
-            style="margin-right:8px;padding:2px 10px;border-radius:4px;border:none;background:#eee;cursor:pointer;font-size:0.98em;"
-            @click="applyHistory(idx)"
-          >Use</button>
-          <span style="white-space:pre-wrap;word-break:break-all;color:#555;">{{ h }}</span>
-        </div>
-      </div>
+      <HistoryList :historyList="historyList" @applyHistory="applyHistory" />
     </div>
-    <div class="sidebar" v-if="actions && actions.length">
-      <div class="sidebar-title">Suggestions</div>
-      <div class="sidebar-list">
-        <div
-          v-for="(act, idx) in actions"
-          :key="idx"
-          class="sidebar-item"
-          :data-active="hoveredSidebarIdx === idx"
-          @mouseenter="hoveredSidebarIdx = idx"
-          @mouseleave="hoveredSidebarIdx = null"
-        >
-          <div>
-            <b>Type:</b>
-            <span v-if="act.action === '$DELETE'">Delete</span>
-            <span v-else-if="act.action.startsWith('$APPEND_')">Append</span>
-            <span v-else-if="act.action.startsWith('$TRANSFORM_')">Transform</span>
-            <span v-else-if="act.action.startsWith('$REPLACE_')">Replace</span>
-            <span v-else>{{ act.action }}</span>
-          </div>
-          <div><b>Original:</b> <i>{{ act.original }}</i></div>
-          <div><b>Suggestion:</b> <i>{{ act.real_replacement }}</i></div>    
-          <div><b>Confidence:</b> {{ Math.round(act.confidence * 100) }}%</div>
-          <div v-if="act.action"><b>Action:</b> {{ act.action }}</div>
-
-          <button
-            class="apply-btn"
-            v-if="hoveredSidebarIdx === idx"
-            @click="applySidebarSuggestion(idx)"
-          >Apply</button>
-        </div>
-      </div>
-    </div>
+    <SuggestionSidebar
+      :actions="actions"
+      :hoveredSidebarIdx="hoveredSidebarIdx"
+      @update:hoveredSidebarIdx="val => hoveredSidebarIdx = val"
+      @applySidebarSuggestion="applySidebarSuggestion"
+    />
   </div>
 </template>
 
