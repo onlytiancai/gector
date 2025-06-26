@@ -306,4 +306,7 @@ gector 目录下每个文件的简单介绍如下：
 
 ---
 
-如果你还有其他函数需要具体介绍，请告诉我！
+# 前端
+
+  cd app
+  npx create-vite@latest . --template vue
