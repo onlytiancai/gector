@@ -262,8 +262,10 @@ function undo() {
 
 <template>
   <div id="app" class="container">
-    <div style="flex:1;min-width:0;">
-      <div class="header">Wawa Grammar Correction</div>
+    <div class="main-content">
+      <div class="header">
+        Wawa Grammar Correction
+      </div>
       <EditorArea
         :editorHtml="editorHtml"
         @input="onInput"
@@ -299,33 +301,24 @@ function undo() {
   flex-direction: row;
   align-items: flex-start;
 }
+.main-content {
+  width: 700px;
+  min-width: 700px;
+  max-width: 700px;
+  flex: none;
+  /* 保持固定宽度，不自动伸缩 */
+}
 .header {
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 18px;
   color: #222;
-}
-.editor-area {
-  position: relative;
-  margin-bottom: 18px;
-  flex: 1;
-  min-width: 0;
-}
-.editor {
-  min-height: 90px;
+  /* 标题单独占一行 */
+  display: block;
   width: 100%;
-  border: 1.5px solid #c3c8d1;
-  border-radius: 8px;
-  padding: 14px 12px;
-  font-size: 1.1rem;
-  outline: none;
-  transition: border 0.2s;
-  background: #fafdff;
 }
-.editor:focus {
-  border-color: #4f8cff;
-  background: #fff;
-}
+
+
 .check-btn {
   background: #4f8cff;
   color: #fff;
@@ -346,18 +339,7 @@ function undo() {
   position: relative;
   display: inline-block;
 }
-.underline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -2px;
-  height: 2px;
-  background: linear-gradient(to right, #f7b500 60%, transparent 0%);
-  background-size: 6px 2px;
-  background-repeat: repeat-x;
-  border-radius: 1px;
-  pointer-events: none;
-}
+
 .actions-bar {
   margin-top: 18px;
   color: #888;
