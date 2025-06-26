@@ -18,6 +18,7 @@
         @mouseenter="$emit('update:hoveredSidebarIdx', idx)"
         @mouseleave="$emit('update:hoveredSidebarIdx', null)"
         :class="{ active: hoveredSidebarIdx === idx }"
+        ref="sidebarItems"
       >
         <div>
           <b>Type:</b>
@@ -42,10 +43,32 @@
 </template>
 
 <script setup>
+import { ref, watch, nextTick } from 'vue'
 const props = defineProps({
   actions: Array,
   hoveredSidebarIdx: Number
 })
+
+// 新增：用于存储 sidebar-item 的 refs
+const sidebarItems = ref([])
+
+// 监听 hoveredSidebarIdx 变化，滚动到对应的 item
+watch(
+  () => props.hoveredSidebarIdx,
+  async (newIdx) => {
+    await nextTick()
+    if (
+      typeof newIdx === 'number' &&
+      sidebarItems.value &&
+      sidebarItems.value[newIdx]
+    ) {
+      sidebarItems.value[newIdx].scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      })
+    }
+  }
+)
 </script>
 
 <style scoped>
