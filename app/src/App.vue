@@ -204,7 +204,9 @@ function updateEditorHtml() {
   let html = ''
   displayTokens.value.forEach((token, idx) => {
     if (token.suggestion) {
-      html += `<span class="suggestion${token.highlight ? ' highlight' : ''}" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
+      // 高亮和下划线，支持点击高亮
+      const activeAttr = hoveredSidebarIdx.value === token.actionIdx ? ' data-active="true"' : ''
+      html += `<span class="suggestion${token.highlight ? ' highlight' : ''}" data-idx="${idx}"${activeAttr} style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
     } else {
       html += `<span data-idx="${idx}">${token.text}</span>`
     }

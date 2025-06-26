@@ -17,6 +17,7 @@
         :data-active="hoveredSidebarIdx === idx"
         @mouseenter="$emit('update:hoveredSidebarIdx', idx)"
         @mouseleave="$emit('update:hoveredSidebarIdx', null)"
+        :class="{ active: hoveredSidebarIdx === idx }"
       >
         <div>
           <b>Type:</b>
