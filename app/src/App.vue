@@ -47,7 +47,8 @@ function renderTokens(text) {
               ...displayTokens.value[idx],
               suggestion: act,
               suggestionType: 'delete',
-              actionIdx: i
+              actionIdx: i,
+              highlight: true // 标记高亮
             }
           }
         }
@@ -57,7 +58,8 @@ function renderTokens(text) {
           suggestion: act,
           suggestionType: 'append',
           isVirtual: true,
-          actionIdx: i
+          actionIdx: i,
+          highlight: true
         })
       } else {
         for (let idx = act.start; idx < act.end; ++idx) {
@@ -66,7 +68,8 @@ function renderTokens(text) {
               ...displayTokens.value[idx],
               suggestion: act,
               suggestionType: 'replace',
-              actionIdx: i
+              actionIdx: i,
+              highlight: true
             }
           }
         }
@@ -193,7 +196,7 @@ function applySidebarSuggestion(actionIdx) {
     tokens.splice(act.start, act.end - act.start, act.real_replacement)
   }
   inputText.value = tokens.join(' ')
-  actions.value = []
+  // 不要立即清空actions，先renderTokens，等checkGrammar后再更新actions
   renderTokens(inputText.value)
   checkGrammar()
 }
@@ -201,7 +204,7 @@ function updateEditorHtml() {
   let html = ''
   displayTokens.value.forEach((token, idx) => {
     if (token.suggestion) {
-      html += `<span class="suggestion" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
+      html += `<span class="suggestion${token.highlight ? ' highlight' : ''}" data-idx="${idx}" style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
     } else {
       html += `<span data-idx="${idx}">${token.text}</span>`
     }
@@ -270,12 +273,6 @@ function undo() {
       <button class="check-btn" style="margin-left:10px;background:#888;" :disabled="!canUndo" @click="undo">
         Undo<span v-if="undoStack.length > 0"> ({{ undoStack.length }})</span>
       </button>
-      <div class="actions-bar" v-if="actions && actions.length">
-        {{ actions.length }} suggestion{{ actions.length > 1 ? 's' : '' }} found.
-      </div>
-      <div class="actions-bar" v-else>
-        <span style="color:#27ae60;font-weight:600;">Grammar is correct!</span>
-      </div>
       <HistoryList :historyList="historyList" @applyHistory="applyHistory" />
     </div>
     <SuggestionSidebar

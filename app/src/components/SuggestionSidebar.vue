@@ -1,6 +1,14 @@
 <template>
-  <div class="sidebar" v-if="actions && actions.length">
+  <div class="sidebar">
     <div class="sidebar-title">Suggestions</div>
+    <div class="actions-bar" style="margin-bottom:10px;">
+      <template v-if="actions && actions.length">
+        {{ actions.length }} suggestion{{ actions.length > 1 ? 's' : '' }} found.
+      </template>
+      <template v-else>
+        <span style="color:#27ae60;font-weight:600;">Grammar is correct!</span>
+      </template>
+    </div>
     <div class="sidebar-list">
       <div
         v-for="(act, idx) in actions"
@@ -58,6 +66,9 @@ const props = defineProps({
   font-size: 1.08rem;
   margin-bottom: 10px;
   color: #4f8cff;
+}
+.actions-bar {
+  margin-bottom: 10px;
 }
 .sidebar-list {
   display: flex;
