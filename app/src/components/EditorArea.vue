@@ -46,11 +46,11 @@ function logCaretPosition() {
 }
 
 function onInput(e) {
-  emits('input', e)
+  //emits('input', e)
   logCaretPosition()
 }
 function onEditorClick(e) {
-  emits('editorClick', e)
+  //emits('editorClick', e)
   logCaretPosition()
 }
 onMounted(() => {

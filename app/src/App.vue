@@ -2,7 +2,6 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import EditorArea from './components/EditorArea.vue'
 import SuggestionSidebar from './components/SuggestionSidebar.vue'
-import HistoryList from './components/HistoryList.vue'
 
 const inputText = ref('')
 const displayTokens = ref([])
@@ -10,22 +9,14 @@ const actions = ref([])
 const loading = ref(false)
 const editorHtml = ref('')
 const hoveredSidebarIdx = ref(null)
-const undoStack = ref([])
 const lastSentences = ref([])
 const lastActionsBySentenceIdx = ref({})
-
-const canUndo = computed(() => undoStack.value.length > 0)
-const historyList = computed(() => {
-  if (!undoStack.value.length) return []
-  return undoStack.value.slice(-10).reverse()
-})
 
 onMounted(() => {
   inputText.value = 'the list of item are on the table since yesterday. my name is lili.'
   renderTokens(inputText.value)
   if (inputText.value && inputText.value.trim()) {
     //checkGrammar()
-    undoStack.value = []
   }
 })
 
@@ -43,9 +34,11 @@ function onInput(e) {
     })
   }, 1000)
 }
+
 function getEditorText() {
   return document.querySelector('.editor').innerText.replace(/\s+/g, ' ').trim()
 }
+
 function renderTokens(text) {
   const tokens = text.split(' ').filter(t => t.length)
   displayTokens.value = tokens.map(t => ({ text: t }))
@@ -90,7 +83,6 @@ function renderTokens(text) {
   updateEditorHtml()
 }
 async function checkGrammar() {
-  pushUndo()
   loading.value = true
   try {
     const sentences = []
@@ -114,7 +106,7 @@ async function checkGrammar() {
       charIdx += allTokens[i].length + 1
     }
     let lastSent = lastSentences.value || []
-    let lastActs = lastActionsBySentenceIdx.value || {}
+    let lastActs = lastActionsBySentenceIdx.value || {}    
     let changedIdxs = []
     for (let i = 0; i < sentences.length; ++i) {
       if (!lastSent[i] || lastSent[i].text !== sentences[i].text) {
@@ -182,6 +174,8 @@ async function checkGrammar() {
     loading.value = false
   }
 }
+
+// 点击错误单词，自动选中侧栏的建议
 function onEditorClick(e) {
   const target = e.target
   if (target.classList && target.classList.contains('suggestion')) {
@@ -192,8 +186,13 @@ function onEditorClick(e) {
     }
   }
 }
+
+// 应用侧栏建议
+// actionIdx 是 actions 数组的索引
+// 根据 actionIdx 找到对应的 action，应用到 inputText 上
+// 更新 inputText 后重新渲染 tokens
+// 并检查语法
 function applySidebarSuggestion(actionIdx) {
-  pushUndo()
   const act = actions.value[actionIdx]
   if (!act) return
   let tokens = inputText.value.split(' ').filter(t => t.length)
@@ -207,10 +206,14 @@ function applySidebarSuggestion(actionIdx) {
     tokens.splice(act.start, act.end - act.start, act.real_replacement)
   }
   inputText.value = tokens.join(' ')
-  // 不要立即清空actions，先renderTokens，等checkGrammar后再更新actions
   renderTokens(inputText.value)
   checkGrammar()
 }
+
+// 更新编辑器 HTML 内容
+// 重新生成 editorHtml，供 EditorArea 组件使用
+// 支持高亮和下划线样式
+// 支持点击高亮，更新 hoveredSidebarIdx
 function updateEditorHtml() {
   let html = ''
   displayTokens.value.forEach((token, idx) => {
@@ -224,50 +227,6 @@ function updateEditorHtml() {
     if (idx !== displayTokens.value.length - 1) html += ' '
   })
   editorHtml.value = html
-  nextTick(() => {
-    const el = document.querySelector('.editor')
-    if (el && document.activeElement === el) {
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      range.collapse(false)
-      const sel = window.getSelection()
-      sel.removeAllRanges()
-      sel.addRange(range)
-    }
-  })
-}
-function pushUndo() {
-  if (
-    undoStack.value.length === 0 ||
-    undoStack.value[undoStack.value.length - 1] !== inputText.value
-  ) {
-    if (undoStack.value.length >= 20) undoStack.value.shift()
-    undoStack.value.push(inputText.value)
-    if (undoStack.value.length > 20) undoStack.value = undoStack.value.slice(-20)
-  }
-}
-function applyHistory(idx) {
-  const h = historyList.value[idx]
-  if (typeof h === 'string') {
-    inputText.value = h
-    actions.value = []
-    renderTokens(inputText.value)
-    checkGrammar()
-  }
-}
-function undo() {
-  if (!canUndo.value) return
-  let prev
-  if (undoStack.value[undoStack.value.length - 1] === inputText.value) {
-    undoStack.value.pop()
-  }
-  prev = undoStack.value.pop()
-  if (typeof prev === 'string') {
-    inputText.value = prev
-    actions.value = []
-    renderTokens(inputText.value)
-    checkGrammar()
-  }
 }
 </script>
 
@@ -286,10 +245,6 @@ function undo() {
       <button class="check-btn" :disabled="loading || !inputText.trim()" @click="checkGrammar">
         {{ loading ? 'Checking...' : 'Check Grammar' }}
       </button>
-      <button class="check-btn" style="margin-left:10px;background:#888;" :disabled="!canUndo" @click="undo">
-        Undo<span v-if="undoStack.length > 0"> ({{ undoStack.length }})</span>
-      </button>
-      <HistoryList :historyList="historyList" @applyHistory="applyHistory" />
     </div>
     <SuggestionSidebar
       :actions="actions"
