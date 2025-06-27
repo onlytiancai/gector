@@ -29,8 +29,19 @@ onMounted(() => {
   }
 })
 
+const editorDisabled = ref(false)
+let grammarCheckTimeout = null
+
 function onInput(e) {
   inputText.value = getEditorText()
+  // 节流自动检查语法，用户持续输入时不检查
+  if (grammarCheckTimeout) clearTimeout(grammarCheckTimeout)
+  grammarCheckTimeout = setTimeout(() => {
+    editorDisabled.value = true
+    checkGrammar().finally(() => {
+      editorDisabled.value = false
+    })
+  }, 1000)
 }
 function getEditorText() {
   return document.querySelector('.editor').innerText.replace(/\s+/g, ' ').trim()
@@ -268,6 +279,7 @@ function undo() {
       </div>
       <EditorArea
         :editorHtml="editorHtml"
+        :disabled="editorDisabled"
         @input="onInput"
         @editorClick="onEditorClick"
       />
