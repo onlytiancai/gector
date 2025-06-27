@@ -60,7 +60,40 @@ onMounted(() => {
   })
 })
 </script>
-
+<style>
+.editor-area .editor .suggestion {
+  position: relative;
+  display: inline-block;
+  background: #fffbe6;
+  border-bottom: 2px dotted #f7b500;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px #f7b50022;
+  transition: background 0.18s;
+  z-index: 1;
+}
+.editor-area .editor .suggestion.highlight,
+.editor-area .editor .suggestion[data-active="true"] {
+  background: #ffeaea !important;
+  border-bottom: 2px solid #e74c3c !important;
+  box-shadow: 0 2px 8px #e74c3c22 !important;
+}
+.editor-area .editor  .suggestion:hover {
+  background: #fff3c1;
+}
+.editor-area .editor  .underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: linear-gradient(to right, #f7b500 60%, transparent 0%);
+  background-size: 6px 2px;
+  background-repeat: repeat-x;
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+}
+</style>
 <style scoped>
 .editor-area {
   position: relative;
