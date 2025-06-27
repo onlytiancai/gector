@@ -19,26 +19,44 @@ const props = defineProps({
   editorHtml: String,
 })
 const emits = defineEmits(['input', 'editorClick'])
-const editorRef = ref(null)
+const editor = ref(null)
+
+function getCaretCharacterOffsetWithin(element) {
+  let caretOffset = 0
+  const selection = window.getSelection()
+  if (selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0)
+    const preCaretRange = range.cloneRange()
+    preCaretRange.selectNodeContents(element)
+    preCaretRange.setEnd(range.endContainer, range.endOffset)
+    caretOffset = preCaretRange.toString().length
+  }
+  return caretOffset
+}
+
+function logCaretPosition() {
+  const el = editor.value
+  if (!el) {
+    console.warn('Editor element not found')
+    return
+  }
+  
+  const offset = getCaretCharacterOffsetWithin(el)
+  console.log('Caret character offset:', offset)
+}
+
 function onInput(e) {
   emits('input', e)
+  logCaretPosition()
 }
 function onEditorClick(e) {
   emits('editorClick', e)
+  logCaretPosition()
 }
 onMounted(() => {
+  console.log('onMounted editor.value:', editor.value)
   watch(() => props.editorHtml, () => {
-    nextTick(() => {
-      const el = editorRef.value
-      if (el && document.activeElement === el) {
-        const range = document.createRange()
-        range.selectNodeContents(el)
-        range.collapse(false)
-        const sel = window.getSelection()
-        sel.removeAllRanges()
-        sel.addRange(range)
-      }
-    })
+    console.log('Editor HTML updated:', props.editorHtml)
   })
 })
 </script>
