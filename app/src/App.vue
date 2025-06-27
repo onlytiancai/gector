@@ -16,7 +16,7 @@ onMounted(() => {
   inputText.value = 'the list of item are on the table since yesterday. my name is lili.'
   renderTokens(inputText.value)
   if (inputText.value && inputText.value.trim()) {
-    //checkGrammar()
+    checkGrammar()
   }
 })
 
@@ -218,9 +218,7 @@ function updateEditorHtml() {
   let html = ''
   displayTokens.value.forEach((token, idx) => {
     if (token.suggestion) {
-      // 高亮和下划线，支持点击高亮
-      const activeAttr = hoveredSidebarIdx.value === token.actionIdx ? ' data-active="true"' : ''
-      html += `<span class="suggestion${token.highlight ? ' highlight' : ''}" data-idx="${idx}"${activeAttr} style="position:relative;display:inline-block;">${token.text}<span class="underline" style="width:100%;"></span></span>`
+      html += `<span class="suggestion" data-idx="${idx}">${token.text}</span>`
     } else {
       html += `<span data-idx="${idx}">${token.text}</span>`
     }
