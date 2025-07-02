@@ -147,11 +147,37 @@ function onSyntaxCheckClick() {
   }
 }
 
+const editTimers = new WeakMap()
+
+function debounceLeafNodeChange(node) {
+  if (!node) return
+  if (editTimers.has(node)) {
+    clearTimeout(editTimers.get(node))
+  }
+  const timer = setTimeout(() => {
+    console.log('叶子块节点内容变化:', node.textContent.trim())
+    editTimers.delete(node)
+  }, 1000)
+  editTimers.set(node, timer)
+}
+
 function onInput(e) {
   //emits('input', e)
   //logCaretPosition()
   // 输入时清除高亮
   clearHighlight()
+  // 检查是否在叶子块节点内编辑
+  let sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  let node = sel.anchorNode
+  // 找到包含光标的叶子块节点
+  while (node && node !== editor.value) {
+    if (isLeafBlockNode(node)) {
+      debounceLeafNodeChange(node)
+      break
+    }
+    node = node.parentNode
+  }
 }
 onMounted(() => {
   console.log('onMounted editor.value:', editor.value)
@@ -195,6 +221,11 @@ onMounted(() => {
 .syntax-btn:hover {
   background: #2563eb;
 }
+.highlight-block {
+  outline: 2px solid #4f8cff;
+  background: #eaf3ff;
+  position: relative;
+}
 </style>
 <style scoped>
 .editor-area {
@@ -224,9 +255,5 @@ onMounted(() => {
   border-color: #4f8cff;
   background: #fff;
 }
-.highlight-block {
-  outline: 2px solid #4f8cff;
-  background: #eaf3ff;
-  position: relative;
-}
+
 </style>
