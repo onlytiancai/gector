@@ -133,49 +133,56 @@ function clearHighlight() {
   }
 }
 
+function handleLeafBlockNodeClick(node) {
+  highlightNode(node)
+  logNodeCache(node)
+}
+
+function wrapAndHighlightFirstTextNode() {
+  for (let child of Array.from(editor.value.childNodes)) {
+    if (child.nodeType === 3 && child.textContent.trim()) {
+      const div = document.createElement('div')
+      div.textContent = child.textContent
+      editor.value.replaceChild(div, child)
+      highlightNode(div)
+      logNodeCache(div)
+      break
+    }
+  }
+}
+
+function handleSuggestionClick(target) {
+  const action = target.getAttribute('data-action')
+  if (action) {
+    try {
+      console.log('单词action:', JSON.parse(action))
+    } catch {
+      console.log('单词action:', action)
+    }
+  }
+}
+
 function onEditorClick(e) {
-  //emits('editorClick', e)
-  //logCaretPosition()
+  // 判断是否点击在 suggestion 上
+  let target = e.target
+  if (target.classList && target.classList.contains('suggestion')) {
+    handleSuggestionClick(target)
+  }
+
   // 判断是否点击在块节点上
   let node = e.target
-  console.log('点击的节点:', node)
   while (node && node !== editor.value) {
     if (isLeafBlockNode(node)) {
-      highlightNode(node)
-      logNodeCache(node)
+      handleLeafBlockNodeClick(node)
       return
     }
     node = node.parentNode
   }
+
   // 如果点击的是 editor.value 本身，尝试高亮 editor 下的第一个纯文本节点
   if (e.target === editor.value) {
-    for (let child of Array.from(editor.value.childNodes)) {
-      if (child.nodeType === 3 && child.textContent.trim()) {
-        // 用div包裹该文本节点
-        const div = document.createElement('div')
-        div.textContent = child.textContent
-        editor.value.replaceChild(div, child)
-        highlightNode(div)
-        logNodeCache(div)
-        return
-      }
-    }
+    wrapAndHighlightFirstTextNode()
   }
-  // 判断是否点击在 suggestion 上
-  let target = e.target
-  if (target.classList && target.classList.contains('suggestion')) {
-    const action = target.getAttribute('data-action')
-    if (action) {
-      try {
-        console.log('单词action:', JSON.parse(action))
-      } catch {
-        console.log('单词action:', action)
-      }
-    }
-    // 不再高亮块
-    return
-  }
-  clearHighlight()
 }
 
 function logNodeCache(node) {
