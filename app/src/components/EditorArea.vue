@@ -10,6 +10,15 @@
       @keydown.enter.stop
       @click="onEditorClick"
     ></div>
+    <button @click="logLeafBlockNodes">打印最内层块节点文本</button>
+    <!-- 语法检测按钮浮层 -->
+    <div
+      v-if="selectedNode && buttonPosition"
+      class="syntax-btn"
+      :style="{ top: buttonPosition.top + 'px', left: buttonPosition.left + 'px' }"
+      @mousedown.prevent.stop
+      @click="onSyntaxCheckClick"
+    >语法检测</div>
   </div>
 </template>
 
@@ -45,18 +54,113 @@ function logCaretPosition() {
   console.log('Caret character offset:', offset)
 }
 
-function onInput(e) {
-  emits('input', e)
-  logCaretPosition()
+const selectedNode = ref(null)
+const buttonPosition = ref(null)
+
+function isLeafBlockNode(node) {
+  // 判断 node 是否为 div/p/li，且没有子 div/p/li
+  if (!node || !['DIV', 'P', 'LI'].includes(node.nodeName)) return false
+  for (let child of node.childNodes) {
+    if (child.nodeType === 1 && ['DIV', 'P', 'LI'].includes(child.nodeName)) {
+      return false
+    }
+  }
+  return true
 }
+
+function getLeafBlockNodes(root) {
+  const result = []
+  function traverse(node) {
+    if (isLeafBlockNode(node)) {
+      result.push(node)
+      return
+    }
+    for (let child of node.childNodes) {
+      if (child.nodeType === 1) {
+        traverse(child)
+      }
+    }
+  }
+  traverse(root)
+  return result
+}
+
+function logLeafBlockNodes() {
+  const el = editor.value
+  if (!el) {
+    console.warn('Editor element not found')
+    return
+  }
+  const leafNodes = getLeafBlockNodes(el)
+  leafNodes.forEach(node => {
+    console.log(`[${node.nodeName}]`, node.textContent.trim())
+  })
+}
+
+function highlightNode(node) {
+  // 移除之前的高亮
+  if (selectedNode.value && selectedNode.value !== node) {
+    selectedNode.value.classList.remove('highlight-block')
+  }
+  selectedNode.value = node
+  if (node) {
+    node.classList.add('highlight-block')
+    // 计算按钮位置
+    const rect = node.getBoundingClientRect()
+    const editorRect = editor.value.getBoundingClientRect()
+    // 按钮定位在块左侧
+    buttonPosition.value = {
+      top: rect.top - editorRect.top + editor.value.scrollTop,
+      left: rect.left - editorRect.left - 36 + editor.value.scrollLeft // 36px 左侧偏移
+    }
+  } else {
+    buttonPosition.value = null
+  }
+}
+
+function clearHighlight() {
+  if (selectedNode.value) {
+    selectedNode.value.classList.remove('highlight-block')
+    selectedNode.value = null
+    buttonPosition.value = null
+  }
+}
+
 function onEditorClick(e) {
-  emits('editorClick', e)
-  logCaretPosition()
+  //emits('editorClick', e)
+  //logCaretPosition()
+  // 判断是否点击在块节点上
+  let node = e.target
+  while (node && node !== editor.value) {
+    if (isLeafBlockNode(node)) {
+      highlightNode(node)
+      return
+    }
+    node = node.parentNode
+  }
+  clearHighlight()
+}
+
+function onSyntaxCheckClick() {
+  if (selectedNode.value) {
+    console.log('语法检测:', selectedNode.value.textContent.trim())
+  }
+}
+
+function onInput(e) {
+  //emits('input', e)
+  //logCaretPosition()
+  // 输入时清除高亮
+  clearHighlight()
 }
 onMounted(() => {
   console.log('onMounted editor.value:', editor.value)
   watch(() => props.editorHtml, () => {
     console.log('Editor HTML updated:', props.editorHtml)
+  })
+  // 滚动时同步按钮位置
+  editor.value.addEventListener('scroll', () => {
+    if (selectedNode.value) highlightNode(selectedNode.value)
   })
 })
 </script>
@@ -72,6 +176,25 @@ onMounted(() => {
   z-index: 1;
 }
 
+.syntax-btn {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  padding: 2px 8px;
+  background: #4f8cff;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.95em;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 2px 8px #4f8cff22;
+  transition: background 0.18s;
+  border: none;
+  outline: none;
+}
+.syntax-btn:hover {
+  background: #2563eb;
+}
 </style>
 <style scoped>
 .editor-area {
@@ -101,5 +224,9 @@ onMounted(() => {
   border-color: #4f8cff;
   background: #fff;
 }
-
+.highlight-block {
+  outline: 2px solid #4f8cff;
+  background: #eaf3ff;
+  position: relative;
+}
 </style>

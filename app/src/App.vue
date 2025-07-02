@@ -14,9 +14,9 @@ const lastActionsBySentenceIdx = ref({})
 
 onMounted(() => {
   inputText.value = 'the list of item are on the table since yesterday. my name is lili.'
-  renderTokens(inputText.value)
+  //renderTokens(inputText.value)
   if (inputText.value && inputText.value.trim()) {
-    checkGrammar()
+    //checkGrammar()
   }
 })
 
