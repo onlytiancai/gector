@@ -145,6 +145,20 @@ function onEditorClick(e) {
     }
     node = node.parentNode
   }
+  // 判断是否点击在 suggestion 上
+  let target = e.target
+  if (target.classList && target.classList.contains('suggestion')) {
+    const action = target.getAttribute('data-action')
+    if (action) {
+      try {
+        console.log('单词action:', JSON.parse(action))
+      } catch {
+        console.log('单词action:', action)
+      }
+    }
+    // 不再高亮块
+    return
+  }
   clearHighlight()
 }
 
@@ -171,6 +185,14 @@ function setNodeCache(node, text, result) {
   nodeCache.set(node, { text, result })
 }
 
+
+function onSyntaxCheckClick() {
+  if (selectedNode.value) {
+    console.log('语法检测:', selectedNode.value.textContent.trim())
+  }
+}
+
+
 async function updateNodeSyntaxCache(node) {
   if (!node) return
   const text = node.textContent.trim()
@@ -180,9 +202,84 @@ async function updateNodeSyntaxCache(node) {
   try {
     const result = await fetchSyntaxCheck(text)
     setNodeCache(node, text, result)
+    highlightSuggestions(node, result)
   } catch (e) {
     setNodeCache(node, text, { error: e })
   }
+}
+
+// 高亮建议单词
+function highlightSuggestions(node, result) {
+  if (!result || !result.actions || !Array.isArray(result.actions)) return
+  // 先移除已有的 suggestion span
+  unwrapSuggestions(node)
+  // 分词（简单按空格分，适用于英文）
+  const text = node.textContent
+  const words = text.split(/(\s+)/) // 保留空格分隔
+  // 构建每个字符的起止索引
+  let charIndex = 0
+  const wordRanges = words.map(w => {
+    const start = charIndex
+    charIndex += w.length
+    return { word: w, start, end: charIndex }
+  })
+  // 标记需要高亮的范围
+  const markRanges = []
+  for (const action of result.actions) {
+    if (typeof action.start === 'number' && typeof action.end === 'number') {
+      // 找到对应的字符范围
+      let acc = 0
+      let startIdx = -1, endIdx = -1
+      for (let i = 0; i < wordRanges.length; ++i) {
+        if (acc === action.start) startIdx = i
+        if (acc + wordRanges[i].word.length === action.end) {
+          endIdx = i
+          break
+        }
+        acc += wordRanges[i].word.length
+      }
+      if (startIdx !== -1 && endIdx !== -1) {
+        markRanges.push({ start: startIdx, end: endIdx, action })
+      }
+    }
+  }
+  // 重新构建HTML
+  let html = ''
+  for (let i = 0; i < wordRanges.length; ++i) {
+    const mark = markRanges.find(r => i >= r.start && i <= r.end)
+    if (mark) {
+      // 用span包裹，带上action数据
+      html += `<span class="suggestion" data-action='${JSON.stringify(mark.action)}'>${escapeHtml(wordRanges[i].word)}</span>`
+    } else {
+      html += escapeHtml(wordRanges[i].word)
+    }
+  }
+  node.innerHTML = html
+}
+
+// 移除已有的 suggestion span
+function unwrapSuggestions(node) {
+  if (!node) return
+  // 只处理直接子节点
+  const spans = node.querySelectorAll('span.suggestion')
+  spans.forEach(span => {
+    // 替换为纯文本节点
+    const text = span.textContent
+    span.replaceWith(document.createTextNode(text))
+  })
+}
+
+// 简单HTML转义
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, function (m) {
+    return ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[m]
+  })
 }
 
 function debounceLeafNodeChange(node) {
