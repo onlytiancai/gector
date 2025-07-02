@@ -186,9 +186,18 @@ function setNodeCache(node, text, result) {
 }
 
 
-function onSyntaxCheckClick() {
+async function onSyntaxCheckClick() {
   if (selectedNode.value) {
-    console.log('语法检测:', selectedNode.value.textContent.trim())
+    try {
+      const node = selectedNode.value
+      const text = node.textContent.trim()
+      const result = await fetchSyntaxCheck(text)
+      setNodeCache(node, text, result)
+      highlightSuggestions(node, result)
+      console.log('语法检测:', text, result)
+    } catch (e) {
+      setNodeCache(node, text, { error: e })
+    }   
   }
 }
 
@@ -223,6 +232,11 @@ function highlightSuggestions(node, result) {
     charIndex += w.length
     return { word: w, start, end: charIndex }
   })
+  // 日志：打印分词和wordRanges
+  console.log('[highlightSuggestions] text:', text)
+  console.log('[highlightSuggestions] result.actions:', result.actions)
+  console.log('[highlightSuggestions] words:', words)
+  console.log('[highlightSuggestions] wordRanges:', wordRanges)
   // 标记需要高亮的范围
   const markRanges = []
   for (const action of result.actions) {
@@ -243,6 +257,8 @@ function highlightSuggestions(node, result) {
       }
     }
   }
+  // 日志：打印markRanges
+  console.log('[highlightSuggestions] markRanges:', markRanges)
   // 重新构建HTML
   let html = ''
   for (let i = 0; i < wordRanges.length; ++i) {
@@ -305,7 +321,7 @@ function onInput(e) {
   let node = sel.anchorNode
   while (node && node !== editor.value) {
     if (isLeafBlockNode(node)) {
-      debounceLeafNodeChange(node)
+      // debounceLeafNodeChange(node)
       break
     }
     node = node.parentNode
