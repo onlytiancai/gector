@@ -29,6 +29,7 @@ import { watch, onMounted, nextTick, ref } from 'vue'
 // 引入Iconify组件和图标
 import { Icon } from '@iconify/vue'
 import spellcheckIcon from '@iconify-icons/mdi/spellcheck'
+import { highlightSuggestions } from '../utils/highlightSuggestions'
 
 const props = defineProps({
   editorHtml: String,
@@ -215,62 +216,6 @@ async function updateNodeSyntaxCache(node) {
   } catch (e) {
     setNodeCache(node, text, { error: e })
   }
-}
-
-// 高亮建议单词
-function highlightSuggestions(node, result) {
-  if (!result || !result.actions || !Array.isArray(result.actions)) return
-  // 先移除已有的 suggestion span
-  unwrapSuggestions(node)
-  // 分词（简单按空格分，适用于英文）
-  const text = node.textContent
-  const words = text.split(/(\s+)/) // 保留空格分隔
-  // 构建每个字符的起止索引
-  let charIndex = 0
-  const wordRanges = words.map(w => {
-    const start = charIndex
-    charIndex += w.length
-    return { word: w, start, end: charIndex }
-  })
-  // 日志：打印分词和wordRanges
-  console.log('[highlightSuggestions] text:', text)
-  console.log('[highlightSuggestions] result.actions:', result.actions)
-  console.log('[highlightSuggestions] words:', words)
-  console.log('[highlightSuggestions] wordRanges:', wordRanges)
-  // 标记需要高亮的范围
-  const markRanges = []
-  for (const action of result.actions) {
-    if (typeof action.start === 'number' && typeof action.end === 'number') {
-      // 找到对应的字符范围
-      let acc = 0
-      let startIdx = -1, endIdx = -1
-      for (let i = 0; i < wordRanges.length; ++i) {
-        if (acc === action.start) startIdx = i
-        if (acc + wordRanges[i].word.length === action.end) {
-          endIdx = i
-          break
-        }
-        acc += wordRanges[i].word.length
-      }
-      if (startIdx !== -1 && endIdx !== -1) {
-        markRanges.push({ start: startIdx, end: endIdx, action })
-      }
-    }
-  }
-  // 日志：打印markRanges
-  console.log('[highlightSuggestions] markRanges:', markRanges)
-  // 重新构建HTML
-  let html = ''
-  for (let i = 0; i < wordRanges.length; ++i) {
-    const mark = markRanges.find(r => i >= r.start && i <= r.end)
-    if (mark) {
-      // 用span包裹，带上action数据
-      html += `<span class="suggestion" data-action='${JSON.stringify(mark.action)}'>${escapeHtml(wordRanges[i].word)}</span>`
-    } else {
-      html += escapeHtml(wordRanges[i].word)
-    }
-  }
-  node.innerHTML = html
 }
 
 // 移除已有的 suggestion span
