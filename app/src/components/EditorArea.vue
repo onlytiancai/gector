@@ -21,6 +21,28 @@
     >
       <Icon :icon="spellcheckIcon" width="22" height="22" />
     </div>
+    <!-- 悬浮建议框 -->
+    <div
+      v-if="suggestionPopover.visible"
+      class="suggestion-popover"
+      :style="{ top: suggestionPopover.position.top + 'px', left: suggestionPopover.position.left + 'px' }"
+    >
+      <div class="popover-content">
+        <div>
+          <b>建议:</b>
+          <span v-if="suggestionPopover.action && suggestionPopover.action.real_replacement">
+            {{ suggestionPopover.action.real_replacement }}
+          </span>
+        </div>
+        <div v-if="suggestionPopover.action && suggestionPopover.action.confidence">
+          <small>置信度: {{ (suggestionPopover.action.confidence * 100).toFixed(1) }}%</small>
+        </div>
+        <div class="popover-actions">
+          <button @click="applySuggestionAction">应用建议</button>
+          <button @click="ignoreSuggestionAction">忽略</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -151,13 +173,66 @@ function wrapAndHighlightFirstTextNode() {
   }
 }
 
+const suggestionPopover = ref({
+  visible: false,
+  action: null,
+  target: null,
+  position: { top: 0, left: 0 }
+})
+
+function closeSuggestionPopover() {
+  suggestionPopover.value.visible = false
+  suggestionPopover.value.action = null
+  suggestionPopover.value.target = null
+}
+
+function applySuggestionAction() {
+  const { action, target } = suggestionPopover.value
+  if (!action || !target) return
+  // 找到对应的span
+  let span = target
+  // 处理不同action
+  if (action.action === '$DELETE') {
+    span.remove()
+  } else if (action.action.startsWith('$APPEND_')) {
+    const appendSpan = document.createElement('span')
+    appendSpan.textContent = action.real_replacement
+    appendSpan.setAttribute('data-action', '')
+    span.after(appendSpan)
+  } else {
+    span.textContent = action.real_replacement
+    span.setAttribute('data-action', '')
+  }
+  closeSuggestionPopover()
+}
+
+function ignoreSuggestionAction() {
+  const { target } = suggestionPopover.value
+  if (target) {
+    target.removeAttribute('data-action')
+    target.classList.remove('suggestion')
+  }
+  closeSuggestionPopover()
+}
+
 function handleSuggestionClick(target) {
-  const action = target.getAttribute('data-action')
-  if (action) {
-    try {
-      console.log('单词action:', JSON.parse(action))
-    } catch {
-      console.log('单词action:', action)
+  const actionStr = target.getAttribute('data-action')
+  if (!actionStr) return
+  let actionObj = null
+  try {
+    actionObj = JSON.parse(actionStr)
+  } catch {
+    actionObj = actionStr
+  }
+  // 计算悬浮框位置
+  const rect = target.getBoundingClientRect()
+  suggestionPopover.value = {
+    visible: true,
+    action: actionObj,
+    target,
+    position: {
+      top: rect.bottom + window.scrollY + 4,
+      left: rect.left + window.scrollX
     }
   }
 }
@@ -311,6 +386,7 @@ onMounted(() => {
   })
 })
 </script>
+
 <style>
 .editor-area .editor .suggestion {
   position: relative;
@@ -346,6 +422,44 @@ onMounted(() => {
   outline: 2px solid #4f8cff;
   background: #eaf3ff;
   position: relative;
+}
+.suggestion-popover {
+  position: absolute;
+  z-index: 100;
+  background: #fff;
+  border: 1.5px solid #4f8cff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px #4f8cff22;
+  padding: 12px 16px;
+  min-width: 180px;
+  max-width: 320px;
+}
+.popover-content {
+  font-size: 1rem;
+  color: #222;
+}
+.popover-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+.popover-actions button {
+  background: #4f8cff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  font-size: 0.97em;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.18s;
+}
+.popover-actions button:last-child {
+  background: #b3cfff;
+  color: #333;
+}
+.popover-actions button:hover {
+  background: #2563eb;
 }
 </style>
 <style scoped>
