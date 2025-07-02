@@ -18,12 +18,18 @@
       :style="{ top: buttonPosition.top + 'px', left: buttonPosition.left + 'px' }"
       @mousedown.prevent.stop
       @click="onSyntaxCheckClick"
-    >语法检测</div>
+    >
+      <Icon :icon="spellcheckIcon" width="22" height="22" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { watch, onMounted, nextTick, ref } from 'vue'
+// 引入Iconify组件和图标
+import { Icon } from '@iconify/vue'
+import spellcheckIcon from '@iconify-icons/mdi/spellcheck'
+
 const props = defineProps({
   editorHtml: String,
 })
