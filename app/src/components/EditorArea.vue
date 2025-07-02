@@ -196,7 +196,7 @@ function applySuggestionAction() {
     span.remove()
   } else if (action.action.startsWith('$APPEND_')) {
     const appendSpan = document.createElement('span')
-    appendSpan.textContent = action.real_replacement
+    appendSpan.textContent = ' ' + action.real_replacement
     appendSpan.setAttribute('data-action', '')
     span.after(appendSpan)
   } else {

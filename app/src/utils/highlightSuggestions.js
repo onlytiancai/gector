@@ -1,5 +1,6 @@
 function splitWords(text) {
-  return text.split(/(\s+)/)
+  // 只保留非空白单词
+  return text.trim().split(/\s+/)
 }
 
 function escapeHtml(str) {
@@ -29,17 +30,20 @@ export function highlightSuggestions(node, result) {
   const text = node.textContent
   const words = splitWords(text)
 
-  // 构建每个非空白word的高亮范围
+  // 构建每个word的高亮范围
   const markMap = new Array(words.length).fill(null)
   for (const action of result.actions) {
-    // action.start/end是非空白word的索引
-    let curIdx = 0
+    // action.start/end是word的索引
     for (let i = 0; i < words.length; ++i) {
-      if (/^\s+$/.test(words[i])) continue
-      if (curIdx >= action.start && curIdx < action.end) {
-        markMap[i] = action
+      if (action.action && action.action.startsWith('$APPEND_')) {
+        if (i === action.end - 1) {
+          markMap[i] = action
+        }
+      } else {
+        if (i >= action.start && i < action.end) {
+          markMap[i] = action
+        }
       }
-      curIdx++
     }
   }
   let html = ''
@@ -49,6 +53,7 @@ export function highlightSuggestions(node, result) {
     } else {
       html += escapeHtml(words[i])
     }
+    if (i !== words.length - 1) html += ' '
   }
   node.innerHTML = html
 }
