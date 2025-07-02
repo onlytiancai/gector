@@ -140,6 +140,7 @@ function onEditorClick(e) {
   while (node && node !== editor.value) {
     if (isLeafBlockNode(node)) {
       highlightNode(node)
+      logNodeCache(node)
       return
     }
     node = node.parentNode
@@ -147,13 +148,42 @@ function onEditorClick(e) {
   clearHighlight()
 }
 
-function onSyntaxCheckClick() {
-  if (selectedNode.value) {
-    console.log('语法检测:', selectedNode.value.textContent.trim())
-  }
+function logNodeCache(node) {
+   console.log(nodeCache.get(node))
+}
+const nodeCache = new WeakMap() // 缓存每个node的{ text, result }
+const editTimers = new WeakMap()
+
+async function fetchSyntaxCheck(sentText) {
+  const resp = await fetch('/api/actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentence: sentText })
+  })
+  return await resp.json()
 }
 
-const editTimers = new WeakMap()
+function getNodeCache(node) {
+  return nodeCache.get(node)
+}
+
+function setNodeCache(node, text, result) {
+  nodeCache.set(node, { text, result })
+}
+
+async function updateNodeSyntaxCache(node) {
+  if (!node) return
+  const text = node.textContent.trim()
+  // 若缓存内容一致则不请求
+  const cache = getNodeCache(node)
+  if (cache && cache.text === text) return
+  try {
+    const result = await fetchSyntaxCheck(text)
+    setNodeCache(node, text, result)
+  } catch (e) {
+    setNodeCache(node, text, { error: e })
+  }
+}
 
 function debounceLeafNodeChange(node) {
   if (!node) return
@@ -162,6 +192,7 @@ function debounceLeafNodeChange(node) {
   }
   const timer = setTimeout(() => {
     console.log('叶子块节点内容变化:', node.textContent.trim())
+    updateNodeSyntaxCache(node)
     editTimers.delete(node)
   }, 1000)
   editTimers.set(node, timer)
@@ -172,11 +203,9 @@ function onInput(e) {
   //logCaretPosition()
   // 输入时清除高亮
   clearHighlight()
-  // 检查是否在叶子块节点内编辑
   let sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return
   let node = sel.anchorNode
-  // 找到包含光标的叶子块节点
   while (node && node !== editor.value) {
     if (isLeafBlockNode(node)) {
       debounceLeafNodeChange(node)
