@@ -115,10 +115,10 @@ function highlightNode(node) {
     // 计算按钮位置
     const rect = node.getBoundingClientRect()
     const editorRect = editor.value.getBoundingClientRect()
-    // 按钮定位在块左侧
+    // 按钮定位在块右上角
     buttonPosition.value = {
       top: rect.top - editorRect.top + editor.value.scrollTop,
-      left: rect.left - editorRect.left - 36 + editor.value.scrollLeft // 36px 左侧偏移
+      left: rect.right - editorRect.left + 2 + editor.value.scrollLeft // 右上角，4px 右侧偏移
     }
   } else {
     buttonPosition.value = null
@@ -280,6 +280,12 @@ onMounted(() => {
   // 滚动时同步按钮位置
   editor.value.addEventListener('scroll', () => {
     if (selectedNode.value) highlightNode(selectedNode.value)
+  })
+  // 监听 esc 键清除高亮
+  editor.value.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      clearHighlight()
+    }
   })
 })
 </script>
