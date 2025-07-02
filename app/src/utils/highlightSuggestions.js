@@ -2,37 +2,6 @@ function splitWords(text) {
   return text.split(/(\s+)/)
 }
 
-function buildWordRanges(words) {
-  let charIndex = 0
-  return words.map(w => {
-    const start = charIndex
-    charIndex += w.length
-    return { word: w, start, end: charIndex }
-  })
-}
-
-function findMarkRanges(actions, wordRanges) {
-  const markRanges = []
-  for (const action of actions) {
-    if (typeof action.start === 'number' && typeof action.end === 'number') {
-      let acc = 0
-      let startIdx = -1, endIdx = -1
-      for (let i = 0; i < wordRanges.length; ++i) {
-        if (acc === action.start) startIdx = i
-        if (acc + wordRanges[i].word.length === action.end) {
-          endIdx = i
-          break
-        }
-        acc += wordRanges[i].word.length
-      }
-      if (startIdx !== -1 && endIdx !== -1) {
-        markRanges.push({ start: startIdx, end: endIdx, action })
-      }
-    }
-  }
-  return markRanges
-}
-
 function escapeHtml(str) {
   return str.replace(/[&<>"']/g, function (m) {
     return ({
@@ -59,20 +28,26 @@ export function highlightSuggestions(node, result) {
   unwrapSuggestions(node)
   const text = node.textContent
   const words = splitWords(text)
-  const wordRanges = buildWordRanges(words)
-  console.log('[highlightSuggestions] text:', text)
-  console.log('[highlightSuggestions] result.actions:', result.actions)
-  console.log('[highlightSuggestions] words:', words)
-  console.log('[highlightSuggestions] wordRanges:', wordRanges)
-  const markRanges = findMarkRanges(result.actions, wordRanges)
-  console.log('[highlightSuggestions] markRanges:', markRanges)
+
+  // 构建每个非空白word的高亮范围
+  const markMap = new Array(words.length).fill(null)
+  for (const action of result.actions) {
+    // action.start/end是非空白word的索引
+    let curIdx = 0
+    for (let i = 0; i < words.length; ++i) {
+      if (/^\s+$/.test(words[i])) continue
+      if (curIdx >= action.start && curIdx < action.end) {
+        markMap[i] = action
+      }
+      curIdx++
+    }
+  }
   let html = ''
-  for (let i = 0; i < wordRanges.length; ++i) {
-    const mark = markRanges.find(r => i >= r.start && i <= r.end)
-    if (mark) {
-      html += `<span class="suggestion" data-action='${JSON.stringify(mark.action)}'>${escapeHtml(wordRanges[i].word)}</span>`
+  for (let i = 0; i < words.length; ++i) {
+    if (markMap[i]) {
+      html += `<span class="suggestion" data-action='${JSON.stringify(markMap[i])}'>${escapeHtml(words[i])}</span>`
     } else {
-      html += escapeHtml(wordRanges[i].word)
+      html += escapeHtml(words[i])
     }
   }
   node.innerHTML = html
