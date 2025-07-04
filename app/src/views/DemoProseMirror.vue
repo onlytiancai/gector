@@ -85,6 +85,8 @@ function getSuggestionDecorations(doc, actions, sentStart, sentence) {
   const decos = []
   const wordOffsets = getWordOffsets(sentence, sentStart)
   for (const action of actions) {
+    // 保证 action 带有 sent_text 字段
+    action.sent_text = sentence
     // action.start/end 是单词索引
     const from = wordOffsets[action.start]?.from
     const to = wordOffsets[action.end - 1]?.to
@@ -182,7 +184,7 @@ function suggestionPlugin() {
 function applySuggestion() {
   const { action } = popover.value
   if (!action) return
-
+    console.log('应用建议:', action)
   // 找到当前句子和句首偏移
   const text = view.state.doc.textContent
   const sentences = splitSentences(text)
@@ -191,6 +193,7 @@ function applySuggestion() {
     const s = sentences[i]
     const sStart = pos
     const sEnd = pos + s.length
+    console.log('检查句子:', s, '索引:', i, '起始偏移:', sStart)
     if (action.sent_text && s.trim() === action.sent_text.trim()) {
       sentIdx = i
       sentStart = sStart
@@ -199,12 +202,13 @@ function applySuggestion() {
     }
     pos = sEnd + 1
   }
+  console.log('找到句子:', sent, '索引:', sentIdx, '起始偏移:', sentStart)
   if (sentIdx === -1) return
 
   const wordOffsets = getWordOffsets(sent, sentStart)
   const from = wordOffsets[action.start]?.from
   const to = wordOffsets[action.end - 1]?.to
-
+console.log('应用建议:', action, 'from:', from, 'to:', to)
   if (from === undefined || to === undefined) return
 
   const tr = view.state.tr
