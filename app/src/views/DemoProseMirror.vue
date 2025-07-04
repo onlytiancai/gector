@@ -208,7 +208,7 @@ function applySuggestion() {
   const wordOffsets = getWordOffsets(sent, sentStart)
   const from = wordOffsets[action.start]?.from
   const to = wordOffsets[action.end - 1]?.to
-console.log('应用建议:', action, 'from:', from, 'to:', to)
+  console.log('应用建议:', action, 'from:', from, 'to:', to)
   if (from === undefined || to === undefined) return
 
   const tr = view.state.tr
@@ -221,7 +221,55 @@ console.log('应用建议:', action, 'from:', from, 'to:', to)
   }
   view.dispatch(tr)
   popover.value.visible = false
-  setTimeout(checkAllSentences, 100)
+
+  // 1. 移除该建议的高亮（装饰）
+  suggestionDecos = DecorationSet.create(view.state.doc, suggestionDecos.find().filter(d => {
+    try {
+      return JSON.parse(d.spec['data-action']).start !== action.start || JSON.parse(d.spec['data-action']).end !== action.end
+    } catch { return true }
+  }))
+  updateDecorations()
+
+  // 2. 只重新检查当前句子
+  setTimeout(async () => {
+    try {
+      const newText = view.state.doc.textContent
+      // 重新定位当前句子（因内容已变动，需重新分割）
+      const newSentences = splitSentences(newText)
+      let newPos = 0, newSent = '', newSentStart = 0
+      for (let i = 0; i < newSentences.length; i++) {
+        const s = newSentences[i]
+        const sStart = newPos
+        const sEnd = sStart + s.length
+        // 以原句首为基准，找到包含原句首的句子
+        if (sentStart >= sStart && sentStart < sEnd) {
+          newSent = s
+          newSentStart = sStart
+          break
+        }
+        newPos = sEnd + 1
+      }
+      if (!newSent.trim()) return
+      const result = await fetchSyntaxCheck(newSent)
+      // 移除该句子范围内的所有建议装饰
+      const start = newSentStart
+      const end = newSentStart + newSent.length
+      suggestionDecos = DecorationSet.create(view.state.doc, suggestionDecos.find().filter(d => {
+        return d.from < start || d.to > end
+      }))
+      // 添加新建议装饰
+      if (result.actions && result.actions.length) {
+        const newDecos = getSuggestionDecorations(view.state.doc, result.actions, newSentStart, newSent)
+        suggestionDecos = DecorationSet.create(view.state.doc, [
+          ...suggestionDecos.find(),
+          ...newDecos
+        ])
+      }
+      updateDecorations()
+    } catch (e) {
+      // 忽略单句失败
+    }
+  }, 100)
 }
 
 // 忽略建议
