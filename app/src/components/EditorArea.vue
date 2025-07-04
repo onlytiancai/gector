@@ -293,6 +293,7 @@ async function onSyntaxCheckClick() {
       setNodeCache(node, text, result)
       highlightSuggestions(node, result)
       console.log('语法检测:', text, result)
+      clearHighlight()
     } catch (e) {
       setNodeCache(node, text, { error: e })
     }   
@@ -315,30 +316,7 @@ async function updateNodeSyntaxCache(node) {
   }
 }
 
-// 移除已有的 suggestion span
-function unwrapSuggestions(node) {
-  if (!node) return
-  // 只处理直接子节点
-  const spans = node.querySelectorAll('span.suggestion')
-  spans.forEach(span => {
-    // 替换为纯文本节点
-    const text = span.textContent
-    span.replaceWith(document.createTextNode(text))
-  })
-}
 
-// 简单HTML转义
-function escapeHtml(str) {
-  return str.replace(/[&<>"']/g, function (m) {
-    return ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    })[m]
-  })
-}
 
 function debounceLeafNodeChange(node) {
   if (!node) return
