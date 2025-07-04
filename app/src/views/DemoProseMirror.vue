@@ -1,6 +1,7 @@
 <template>
   <div class="prosemirror-demo">
     <div ref="editor" class="pm-editor"></div>
+    <button class="manual-check-btn" @click="checkAllSentences">手动检查全部句子</button>
     <div v-if="popover.visible" class="suggestion-popover" :style="popover.position">
       <div class="popover-content">
         <div>
@@ -106,26 +107,33 @@ function getSuggestionDecorations(doc, actions, sentStart, sentence) {
 // 重新检查所有句子
 async function checkAllSentences() {
   const text = view.state.doc.textContent
+  console.log('[checkAllSentences] 文本内容:', text)
   const sentences = splitSentences(text)
+  console.log('[checkAllSentences] 分割句子:', sentences)
   let pos = 0
   let allDecos = []
   for (const sent of sentences) {
     const sentStart = pos
     const sentEnd = pos + sent.length
+    console.log(`[checkAllSentences] 检查句子: "${sent}" 起始: ${sentStart} 结束: ${sentEnd}`)
     // 只检查非空句子
     if (sent.trim()) {
       try {
         const result = await fetchSyntaxCheck(sent)
+        console.log(`[checkAllSentences] API返回:`, result)
         if (result.actions && result.actions.length) {
-          allDecos.push(...getSuggestionDecorations(view.state.doc, result.actions, sentStart, sent))
+          const decos = getSuggestionDecorations(view.state.doc, result.actions, sentStart, sent)
+          console.log(`[checkAllSentences] 生成装饰:`, decos)
+          allDecos.push(...decos)
         }
       } catch (e) {
-        console.warn('语法检查失败', e)
+        console.warn('[checkAllSentences] 语法检查失败', e)
       }
     }
     pos = sentEnd + 1 // 跳过分隔符
   }
   suggestionDecos = DecorationSet.create(view.state.doc, allDecos)
+  console.log('[checkAllSentences] 更新全部装饰:', suggestionDecos.find())
   updateDecorations()
 }
 
@@ -192,7 +200,7 @@ function applySuggestion() {
   for (let i = 0; i < sentences.length; i++) {
     const s = sentences[i]
     const sStart = pos
-    const sEnd = pos + s.length
+    const sEnd = sStart + s.length
     console.log('检查句子:', s, '索引:', i, '起始偏移:', sStart)
     if (action.sent_text && s.trim() === action.sent_text.trim()) {
       sentIdx = i
@@ -279,7 +287,9 @@ function ignoreSuggestion() {
   if (!action) return
   suggestionDecos = DecorationSet.create(view.state.doc, suggestionDecos.find().filter(d => {
     try {
-      return JSON.parse(d.spec['data-action']).start !== action.start || JSON.parse(d.spec['data-action']).end !== action.end
+      const decoAction = JSON.parse(d.spec['data-action'])
+      // 移除start和end都相同的装饰
+      return decoAction.start !== action.start || decoAction.end !== action.end
     } catch { return true }
   }))
   updateDecorations()
@@ -391,5 +401,20 @@ onBeforeUnmount(() => {
 }
 .popover-actions button:hover {
   background: #2563eb;
+}
+.manual-check-btn {
+  margin-bottom: 12px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 18px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.manual-check-btn:hover {
+  background: #1746a2;
 }
 </style>
