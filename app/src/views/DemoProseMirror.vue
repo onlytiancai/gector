@@ -21,7 +21,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { EditorState } from 'prosemirror-state'
+import { EditorState, Plugin } from 'prosemirror-state'
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view'
 import { Schema, DOMParser } from 'prosemirror-model'
 import { schema as basicSchema } from 'prosemirror-schema-basic'
@@ -115,7 +115,7 @@ function updateDecorations() {
 
 // ProseMirror 插件：用于渲染建议下划线
 function suggestionPlugin() {
-  return {
+  return new Plugin({
     props: {
       decorations(state) {
         return suggestionDecos
@@ -145,7 +145,7 @@ function suggestionPlugin() {
         return false
       }
     }
-  }
+  })
 }
 
 // 应用建议
