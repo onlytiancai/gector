@@ -75,6 +75,34 @@ function getHWordDecorations(doc) {
   return DecorationSet.create(doc, decorations)
 }
 
+/**
+ * 根据语法错误范围生成装饰
+ * @param {Node} doc - ProseMirror 的文档根节点
+ * @param {Array<{from: number, to: number}>} ranges - 错误范围
+ * @returns {DecorationSet}
+ */
+function getSyntaxErrorDecorations(doc, ranges) {
+  const decorations = []
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      const textLen = node.text.length
+      for (const { from, to } of ranges) {
+        // 只高亮当前节点范围内的错误
+        const nodeFrom = Math.max(0, from - pos)
+        const nodeTo = Math.min(textLen, to - pos)
+        console.log('Node from:', nodeFrom, 'to:', nodeTo, 'textLen:', textLen)
+        if (nodeFrom < nodeTo && nodeFrom < textLen && nodeTo > 0) {
+          console.log('Adding syntax error decoration from', pos + nodeFrom, 'to', pos + nodeTo)
+          decorations.push(
+            Decoration.inline(pos + nodeFrom, pos + nodeTo, { class: 'syntax-error-highlight' })
+          )
+        }
+      }
+    }
+  })
+  return DecorationSet.create(doc, decorations)
+}
+
 // 高亮plugin
 /**
  * 创建一个ProseMirror插件，用于高亮所有包含"h"字母的单词。
@@ -120,15 +148,116 @@ function createHighlightPlugin() {
         // 否则复用旧的装饰集合
         return old
       }
+    }
+  })
+}
+
+/**
+ * 语法检查异步插件
+ */
+function createSyntaxCheckPlugin() {
+  // 用于存储当前的 DecorationSet
+  let currentDeco = DecorationSet.empty
+  return new Plugin({
+    key: new PluginKey('syntax-check'),
+    state: {
+      init(_, { doc }) {
+        currentDeco = DecorationSet.empty
+        return currentDeco
+      },
+      apply(tr, old, oldState, newState) {
+        // 检查是否有新的装饰通过 tr.meta 传递
+        const newDeco = tr.getMeta('syntax-check-update')
+        if (newDeco) {
+          currentDeco = newDeco
+          return currentDeco
+        }
+        // 只在文档变更时清空装饰，等待异步检查
+        if (tr.docChanged) {
+          currentDeco = DecorationSet.empty
+          return currentDeco
+        }
+        return currentDeco
+      }
     },
+    view(editorView) {
+      let timeout = null
+      let destroyed = false
+      async function check() {
+        if (destroyed) return
+        const text = editorView.state.doc.textContent
+        try {
+          const ranges = await fetchSyntaxCheck(text)
+          console.log('Syntax check ranges:', ranges)
+          if (destroyed) return
+          const deco = getSyntaxErrorDecorations(editorView.state.doc, ranges)
+          // 通过tr更新装饰
+          const tr = editorView.state.tr.setMeta('syntax-check-update', deco)
+          editorView.dispatch(tr)
+        } catch (e) {
+          console.error('Syntax check error:', e)
+        } finally {
+          if (destroyed) return
+        }
+      }
+      function scheduleCheck() {
+        if (timeout) clearTimeout(timeout)
+        timeout = setTimeout(check, 400)
+      }
+      editorView.setProps({
+        handleDOMEvents: {
+          input: () => { scheduleCheck(); return false }
+        }
+      })
+      // 首次检查
+      scheduleCheck()
+      return {
+        update(view, prevState) {
+          if (view.state.doc !== prevState.doc) {
+            scheduleCheck()
+          }
+        },
+        destroy() {
+          destroyed = true
+          if (timeout) clearTimeout(timeout)
+        }
+      }
+    }
+  })
+}
+
+/**
+ * 合并所有插件的装饰集合
+ */
+function combineDecorationsPlugin() {
+  // 将 highlightPluginKey 和 syntaxPluginKey 提前定义并复用
+  const syntaxPluginKey = new PluginKey('syntax-check')
+  return new Plugin({
+    key: new PluginKey('combine-decorations'),
     props: {
-      /**
-       * 返回当前状态下的装饰集合，供ProseMirror渲染。
-       * @param {*} state - 当前编辑器状态
-       * @returns DecorationSet
-       */
       decorations(state) {
-        return this.getState(state)
+        let decos = []
+        // highlight
+        const highlight = highlightPluginKey.get(state)
+        console.log('Highlight decorations:', highlight)
+        if (highlight) {
+          const d = highlight.getState(state)
+          if (d && !d.isEmpty) decos.push(d)
+        }
+        // syntax check
+        const syntax = syntaxPluginKey.get(state)
+        console.log('Syntax check decorations:', syntax)
+        if (syntax) {
+          const d = syntax.getState(state)
+          if (d && !d.isEmpty) decos.push(d)
+        }
+        if (decos.length === 0) return null
+        if (decos.length === 1) return decos[0]
+        let result = decos[0]
+        for (let i = 1; i < decos.length; ++i) {
+          result = result.add(state.doc, result.find().concat(decos[i].find()))
+        }
+        return result
       }
     }
   })
@@ -137,7 +266,7 @@ function createHighlightPlugin() {
 const highlightPluginKey = new PluginKey('highlight-h-words')
 
 function trChanged(view, tr) {
-  console.log('Transaction changed:', tr)
+  //console.log('Transaction changed:', tr)
   // 打印被改动的节点文本和类型，避免越界
   const docSize = view.state.doc.content.size
   tr.mapping.maps.forEach((stepMap) => {
@@ -148,7 +277,7 @@ function trChanged(view, tr) {
       if (safeFrom < safeTo) {
         view.state.doc.nodesBetween(safeFrom, safeTo, (node, pos) => {
           if (node.isTextblock || node.isText) {
-            console.log('Changed node type:', node.type.name, 'text:', node.textContent)
+            //console.log('Changed node type:', node.type.name, 'text:', node.textContent)
           }
         })
       }
@@ -175,6 +304,8 @@ onMounted(() => {
     plugins: [
       ...exampleSetup({ schema: basicSchema }),
       createHighlightPlugin(),
+      createSyntaxCheckPlugin(),
+      combineDecorationsPlugin(),
       // 监听变更
       new Plugin({
         props: {
@@ -224,5 +355,9 @@ onBeforeUnmount(() => {
 .h-word-highlight {
   background: yellow;
   border-radius: 2px;
+}
+.syntax-error-highlight {
+  background: #ffb3b3;
+  border-bottom: 2px solid red;
 }
 </style>
