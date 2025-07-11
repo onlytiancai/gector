@@ -16,16 +16,21 @@ import 'prosemirror-menu/style/menu.css'
 const editor = ref(null)
 let view = null
 
-
 function trChanged(view, tr) {
-  // 打印被改动的节点文本和类型
+  // 打印被改动的节点文本和类型，避免越界
+  const docSize = view.state.doc.content.size
   tr.mapping.maps.forEach((stepMap) => {
     stepMap.forEach((from, to) => {
-      view.state.doc.nodesBetween(from, to, (node, pos) => {
-        if (node.isTextblock || node.isText) {
-          console.log('Changed node type:', node.type.name, 'text:', node.textContent)
-        }
-      })
+      // 限制范围在文档有效区间
+      const safeFrom = Math.max(0, Math.min(from, docSize))
+      const safeTo = Math.max(0, Math.min(to, docSize))
+      if (safeFrom < safeTo) {
+        view.state.doc.nodesBetween(safeFrom, safeTo, (node, pos) => {
+          if (node.isTextblock || node.isText) {
+            console.log('Changed node type:', node.type.name, 'text:', node.textContent)
+          }
+        })
+      }
     })
   })
 }
