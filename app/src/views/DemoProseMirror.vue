@@ -21,18 +21,38 @@ const editor = ref(null)
 let view = null
 
 /**
+ * 匹配文本中所有包含"h"的单词，并返回它们在文本中的起止位置。
+ * @param {string} text - 要匹配的文本
+ * @returns {Array<{from: number, to: number}>} - 每个匹配单词的起止位置
+ */
+function findHWordRanges(text) {
+  const ranges = []
+  const regex = /\b\w*h\w*\b/gi
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    ranges.push({ from: match.index, to: match.index + match[0].length })
+  }
+  return ranges
+}
+
+async function fetchSyntaxCheck(sentText) {
+  const resp = await fetch('/api/actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentence: sentText })
+  })
+  const data = await resp.json()
+  const ranges = []
+  for (const action of data.actions) {
+    if (action.token_end !== undefined && action.token_start !== undefined) {
+      ranges.push({ from: action.token_start, to: action.token_end })
+    }
+  }
+  return ranges
+}
+
+/**
  * 遍历整个 ProseMirror 文档，查找所有包含字母 "h" 的单词，并为这些单词生成装饰（Decoration）。
- * 
- * ProseMirror 的文档（doc）是一个树状结构，由节点（Node）组成。
- * 该函数会递归遍历所有节点，定位到文本节点（isText），
- * 然后用正则表达式匹配所有包含 "h" 的单词（\b\w*h\w*\b，忽略大小写）。
- * 
- * 对每个匹配到的单词，计算其在文档中的绝对位置（from, to），
- * 并创建一个 inline 类型的装饰（Decoration.inline），
- * 这样这些单词就会被高亮显示（通过 class: 'h-word-highlight'）。
- * 
- * 返回值是 DecorationSet，ProseMirror 用它来管理和渲染所有装饰。
- * 
  * @param {Node} doc - ProseMirror 的文档根节点
  * @returns {DecorationSet} - 包含所有高亮装饰的集合
  */
@@ -42,21 +62,16 @@ function getHWordDecorations(doc) {
     if (node.isText) {
       const text = node.text
       if (!text) return
-      // 匹配所有包含h的单词（忽略大小写）
-      const regex = /\b\w*h\w*\b/gi
-      let match
-      while ((match = regex.exec(text)) !== null) {
+      // 利用 findHWordRanges 获取所有匹配范围
+      const ranges = findHWordRanges(text)
+      for (const { from, to } of ranges) {
         // 计算单词在整个文档中的绝对位置
-        const from = pos + match.index
-        const to = from + match[0].length
-        // 创建一个内联装饰，应用高亮样式
         decorations.push(
-          Decoration.inline(from, to, { class: 'h-word-highlight' })
+          Decoration.inline(pos + from, pos + to, { class: 'h-word-highlight' })
         )
       }
     }
   })
-  // 返回所有装饰的集合
   return DecorationSet.create(doc, decorations)
 }
 
