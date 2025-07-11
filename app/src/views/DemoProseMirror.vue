@@ -45,7 +45,8 @@ async function fetchSyntaxCheck(sentText) {
   const ranges = []
   for (const action of data.actions) {
     if (action.token_end !== undefined && action.token_start !== undefined) {
-      ranges.push({ from: action.token_start, to: action.token_end })
+      // 注意：这里的 token_start 和 token_end 是基于 0 的索引
+      ranges.push({ from: action.token_start+1, to: action.token_end+1 })
     }
   }
   return ranges
@@ -159,7 +160,7 @@ function createSyntaxCheckPlugin() {
   // 用于存储当前的 DecorationSet
   let currentDeco = DecorationSet.empty
   return new Plugin({
-    key: new PluginKey('syntax-check'),
+    key: syntaxPluginKey,
     state: {
       init(_, { doc }) {
         currentDeco = DecorationSet.empty
@@ -230,8 +231,6 @@ function createSyntaxCheckPlugin() {
  * 合并所有插件的装饰集合
  */
 function combineDecorationsPlugin() {
-  // 将 highlightPluginKey 和 syntaxPluginKey 提前定义并复用
-  const syntaxPluginKey = new PluginKey('syntax-check')
   return new Plugin({
     key: new PluginKey('combine-decorations'),
     props: {
@@ -264,6 +263,7 @@ function combineDecorationsPlugin() {
 }
 
 const highlightPluginKey = new PluginKey('highlight-h-words')
+const syntaxPluginKey = new PluginKey('syntax-check')
 
 function trChanged(view, tr) {
   //console.log('Transaction changed:', tr)
