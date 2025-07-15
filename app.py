@@ -17,10 +17,16 @@ gec_model = GecBERTModel(
 )
 
 def get_char_index_range(matches, word_from, word_to):
+    print(f"Getting character index range for words {word_from} to {word_to}, len matches= {len(matches)}")
     # 边界检查
-    if word_from < 0 or word_to > len(matches) or word_from >= word_to:
+    if word_from < 0 or word_to > len(matches) or word_from > word_to:
         raise ValueError("Invalid word_from or word_to index")
 
+    if word_from == len(matches):
+        # 如果 word_from 是最后一个单词，返回最后一个单词的结束位置
+        start_index = matches[word_from - 1].start()
+        end_index = matches[word_from - 1].end()
+        return (start_index, end_index)
     start_index = matches[word_from].start()
     end_index = matches[word_to - 1].end()
 
@@ -51,6 +57,7 @@ def get_actions():
         error_prob=error_probs[0]
     )
     for action in actions:
+        print(f"Action: {action}")
         token_start, token_end = get_char_index_range(matches, action['start'], action['end'])
         action['token_start'] = token_start
         action['token_end'] = token_end
