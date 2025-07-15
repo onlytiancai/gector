@@ -664,25 +664,6 @@ function combineDecorationsPlugin() {
 const highlightPluginKey = new PluginKey('highlight-h-words')
 const syntaxPluginKey = new PluginKey('syntax-check')
 
-function trChanged(view, tr) {
-  //console.log('Transaction changed:', tr)
-  // 打印被改动的节点文本和类型，避免越界
-  const docSize = view.state.doc.content.size
-  tr.mapping.maps.forEach((stepMap) => {
-    stepMap.forEach((from, to) => {
-      // 限制范围在文档有效区间
-      const safeFrom = Math.max(0, Math.min(from, docSize))
-      const safeTo = Math.max(0, Math.min(to, docSize))
-      if (safeFrom < safeTo) {
-        view.state.doc.nodesBetween(safeFrom, safeTo, (node, pos) => {
-          if (node.isTextblock || node.isText) {
-            //console.log('Changed node type:', node.type.name, 'text:', node.textContent)
-          }
-        })
-      }
-    })
-  })
-}
 
 function highlightHWords() {
   if (view) {
@@ -705,19 +686,6 @@ onMounted(() => {
       createHighlightPlugin(),
       createSyntaxCheckPlugin(),
       combineDecorationsPlugin(),
-      // 监听变更
-      new Plugin({
-        props: {
-          handleDOMEvents: {},
-        },
-        // 监听事务
-        apply(tr, prev, oldState, newState) {
-          if (tr.docChanged) {
-            trChanged(view, tr)
-          }
-          return prev
-        }
-      })
     ]
   })
 
@@ -727,9 +695,6 @@ onMounted(() => {
     dispatchTransaction(tr) {
       const newState = view.state.apply(tr)
       view.updateState(newState)
-      if (tr.docChanged) {
-        trChanged(view, tr)
-      }
     }
   })
 })
