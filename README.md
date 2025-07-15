@@ -310,3 +310,7 @@ gector 目录下每个文件的简单介绍如下：
 
   cd app
   npx create-vite@latest . --template vue
+
+# 后台
+
+    pyenv activate gector
