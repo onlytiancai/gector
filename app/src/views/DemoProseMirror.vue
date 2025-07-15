@@ -36,8 +36,6 @@ import { Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import 'prosemirror-example-setup/style/style.css'
 import 'prosemirror-menu/style/menu.css'
-import tippy from 'tippy.js'
-import 'tippy.js/dist/tippy.css'
 
 const editor = ref(null)
 const tooltip = ref(null)
@@ -129,7 +127,8 @@ function getHWordDecorations(doc) {
 }
 
 /**
- * Generate syntax error decorations with hover event handling
+ * Generate syntax error decorations with click event handling
+ * Store error data in both spec and attrs for reliable access
  * @param {Node} doc - ProseMirror document
  * @param {Array} ranges - Error ranges with action data
  * @returns {DecorationSet}
@@ -150,6 +149,10 @@ function getSyntaxErrorDecorations(doc, ranges) {
               class: 'syntax-error-highlight',
               'data-error': JSON.stringify(action),
               'data-range': JSON.stringify({ from: pos + nodeFrom, to: pos + nodeTo })
+            }, {
+              // Store in spec for internal access
+              errorAction: action,
+              errorRange: { from: pos + nodeFrom, to: pos + nodeTo }
             })
           )
         }
@@ -167,11 +170,21 @@ function getSyntaxErrorDecorations(doc, ranges) {
  * @param {number} y - Mouse Y position
  */
 function showTooltip(action, range, x, y) {
+  console.log('Show tooltip for action:', action, 'at range:', range, 'position:', x, y)
+  
+  // Ensure we have valid coordinates
+  const safeX = Math.max(10, x || 0)
+  const safeY = Math.max(10, y || 0)
+  
   currentError.value = action
   currentErrorRange.value = range
-  tooltipX.value = x + 10
-  tooltipY.value = y - 50
+  tooltipX.value = safeX + 10
+  tooltipY.value = safeY - 80  // Move up more to avoid covering text
   tooltipVisible.value = true
+  
+  console.log('Tooltip should be visible at:', tooltipX.value, tooltipY.value)
+  console.log('Tooltip visible state:', tooltipVisible.value)
+  console.log('Current error:', currentError.value)
 }
 
 /**
@@ -325,7 +338,7 @@ function createSyntaxCheckPlugin() {
       
       /**
        * Handle click events using ProseMirror's position resolution
-       * This is more reliable than DOM event handling for decorated text
+       * Access error data from decoration spec
        */
       function handleClick(view, pos, event) {
         console.log('ProseMirror click at position:', pos)
@@ -344,17 +357,12 @@ function createSyntaxCheckPlugin() {
         for (const decoration of foundDecorations) {
           const spec = decoration.spec
           console.log('Decoration spec:', spec)
-          if (spec && spec['data-error'] && spec['data-range']) {
-            try {
-              const action = JSON.parse(spec['data-error'])
-              const range = JSON.parse(spec['data-range'])
-              console.log('Found syntax error decoration:', action)
-              
-              showTooltip(action, range, event.clientX, event.clientY)
-              return true
-            } catch (parseError) {
-              console.error('Failed to parse decoration data:', parseError)
-            }
+          
+          // Check if this is a syntax error decoration
+          if (spec && spec.errorAction && spec.errorRange) {
+            console.log('Found syntax error decoration:', spec.errorAction)
+            showTooltip(spec.errorAction, spec.errorRange, event.clientX, event.clientY)
+            return true
           }
         }
         
@@ -362,15 +370,31 @@ function createSyntaxCheckPlugin() {
         return false
       }
       
-      // Enhanced document click handler
+      /**
+       * Enhanced document click handler to prevent tooltip conflicts
+       */
       function handleDocumentClick(event) {
         if (!event || !event.target) return
         
         // Don't hide if clicking on tooltip
         if (tooltip.value && tooltip.value.contains(event.target)) {
+          console.log('Clicked on tooltip, keeping it open')
           return
         }
         
+        // Don't immediately hide if clicking on syntax error (let handleClick manage it)
+        let element = event.target
+        let depth = 0
+        while (element && depth < 5) {
+          if (element.classList && element.classList.contains('syntax-error-highlight')) {
+            console.log('Clicked on syntax error, letting handleClick manage tooltip')
+            return
+          }
+          element = element.parentElement
+          depth++
+        }
+        
+        console.log('Clicked outside, hiding tooltip')
         hideTooltip()
       }
       
@@ -526,12 +550,14 @@ onBeforeUnmount(() => {
   padding: 10px;
   outline: none;
   width: 600px;
-  text-align:left;
+  text-align: left;
 }
+
 .h-word-highlight {
   background: yellow;
   border-radius: 2px;
 }
+
 .syntax-error-highlight {
   background: #ffb3b3;
   border-bottom: 2px solid red;
@@ -549,10 +575,13 @@ onBeforeUnmount(() => {
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;  /* Increased z-index to ensure visibility */
   max-width: 250px;
   font-size: 14px;
+  pointer-events: auto;  /* Ensure tooltip can receive clicks */
+  /* Add a border for debugging visibility */
+  border: 2px solid #007acc;
 }
 
 .tooltip-content {
