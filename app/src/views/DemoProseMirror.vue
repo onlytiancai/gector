@@ -1,6 +1,5 @@
 <template>
   <div>
-    <button @click="highlightHWords">高亮含 h 的单词</button>
     <div ref="editor"></div>
   </div>
 </template>
@@ -9,24 +8,20 @@
 import { onMounted, ref, onBeforeUnmount } from 'vue'
 import { EditorState } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
-import { Schema, DOMParser } from 'prosemirror-model'
+import { DOMParser } from 'prosemirror-model'
 import { schema as basicSchema } from 'prosemirror-schema-basic'
 import { exampleSetup } from 'prosemirror-example-setup'
 import { Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
-import tippy from 'tippy.js'
+import { showTooltip, hideTooltip } from '../utils/tooltip'
 import 'prosemirror-example-setup/style/style.css'
 import 'prosemirror-menu/style/menu.css'
-import 'tippy.js/dist/tippy.css'
 
 const editor = ref(null)
 let view = null
-let currentTippyInstance = null
 
 // Track ignored errors to prevent re-highlighting
 const ignoredErrors = new Set()
-
-
 
 /**
  * Fetch syntax check with full error data
@@ -97,213 +92,6 @@ function getSyntaxErrorDecorations(doc, ranges) {
   return DecorationSet.create(doc, decorations)
 }
 
-/**
- * Create tooltip content DOM element for tippy.js
- * @param {Object} action - Error action data
- * @returns {HTMLElement} - DOM element for tooltip content
- */
-function createTooltipContent(action) {
-  const container = document.createElement('div')
-  container.className = 'tooltip-content'
-  
-  // Create action info section
-  const actionInfo = document.createElement('div')
-  actionInfo.className = 'action-info'
-  
-  const isAppend = action.action.startsWith('$APPEND_')
-  const isDelete = action.action === '$DELETE'
-  
-  if (isAppend) {
-    actionInfo.classList.add('append')
-    const displayText = getDisplayTextForAction(action)
-    actionInfo.innerHTML = `
-      <div class="action-type">📝 添加建议</div>
-      <div class="suggestion-info">
-        <strong>在 "${displayText}" 后添加:</strong> "${action.real_replacement}"
-      </div>
-    `
-  } else if (isDelete) {
-    actionInfo.classList.add('delete')
-    actionInfo.innerHTML = `
-      <div class="action-type">🗑️ 删除建议</div>
-      <div class="suggestion-info">
-        <strong>建议删除:</strong> "${action.original}"
-      </div>
-      <div class="reason-info">该词可能是多余的</div>
-    `
-  } else {
-    actionInfo.classList.add('replace')
-    actionInfo.innerHTML = `
-      <div class="action-type">✏️ 替换建议</div>
-      <div class="error-info">
-        <strong>原文:</strong> "${action.original}"
-      </div>
-      <div class="suggestion-info">
-        <strong>建议改为:</strong> "${action.real_replacement}"
-      </div>
-    `
-  }
-  
-  container.appendChild(actionInfo)
-  
-  // Create confidence info if available
-  if (action.confidence) {
-    const confidenceInfo = document.createElement('div')
-    confidenceInfo.className = 'confidence-info'
-    
-    const confidencePercent = Math.round(action.confidence * 100)
-    const confidenceClass = getConfidenceClass(action.confidence)
-    
-    confidenceInfo.innerHTML = `
-      <span class="confidence-label">置信度:</span>
-      <div class="confidence-bar">
-        <div class="confidence-fill ${confidenceClass}" style="width: ${confidencePercent}%"></div>
-      </div>
-      <span class="confidence-value">${confidencePercent}%</span>
-    `
-    
-    container.appendChild(confidenceInfo)
-  }
-  
-  // Create action buttons
-  const actionsDiv = document.createElement('div')
-  actionsDiv.className = 'tooltip-actions'
-  
-  const applyBtn = document.createElement('button')
-  applyBtn.className = 'btn-apply'
-  applyBtn.textContent = getApplyButtonTextForAction(action)
-  applyBtn.setAttribute('data-action', 'apply')
-  
-  const ignoreBtn = document.createElement('button')
-  ignoreBtn.className = 'btn-ignore'
-  ignoreBtn.textContent = '忽略'
-  ignoreBtn.setAttribute('data-action', 'ignore')
-  
-  actionsDiv.appendChild(applyBtn)
-  actionsDiv.appendChild(ignoreBtn)
-  container.appendChild(actionsDiv)
-  
-  return container
-}
-
-/**
- * Create a virtual reference element for better positioning
- * @param {EditorView} view - ProseMirror editor view
- * @param {number} from - Start position
- * @param {number} to - End position
- * @returns {Object} - Virtual reference object for tippy
- */
-function createVirtualReference(view, from, to) {
-  return {
-    getBoundingClientRect() {
-      const start = view.coordsAtPos(from)
-      const end = view.coordsAtPos(to)
-      
-      return {
-        left: start.left,
-        top: start.top,
-        right: end.right,
-        bottom: end.bottom,
-        width: end.right - start.left,
-        height: end.bottom - start.top,
-        x: start.left,
-        y: start.top
-      }
-    }
-  }
-}
-
-/**
- * Show tooltip using tippy.js with proper positioning using ProseMirror coordinates
- * @param {Object} action - Error action data
- * @param {Object} range - Error range in document
- * @param {HTMLElement} targetElement - Element to attach tooltip to (fallback)
- */
-function showTooltip(action, range, targetElement) {
-  console.log('Show tooltip for action:', action, 'at range:', range)
-  
-  // Hide existing tooltip
-  hideTooltip()
-  
-  if (!view) {
-    console.warn('No editor view available')
-    return
-  }
-  
-  // Create virtual reference using ProseMirror coordinates
-  const virtualRef = createVirtualReference(view, range.from, range.to)
-  const testRect = virtualRef.getBoundingClientRect()
-  console.log('Virtual reference rect:', testRect)
-  
-  // Validate coordinates
-  if (testRect.width === 0 && testRect.height === 0) {
-    console.warn('Invalid coordinates, falling back to target element')
-    if (!targetElement) return
-    
-    const rect = targetElement.getBoundingClientRect()
-    if (rect.width === 0 || rect.height === 0) {
-      console.warn('Target element also has no dimensions')
-      return
-    }
-  }
-  
-  // Create DOM content for tooltip
-  const tooltipContent = createTooltipContent(action)
-  
-  // Create tippy instance with virtual reference
-  currentTippyInstance = tippy(document.body, {
-    content: tooltipContent,
-    allowHTML: true,
-    interactive: true,
-    trigger: 'manual',
-    placement: 'top-start',
-    theme: 'syntax-correction',
-    arrow: true,
-    offset: [0, 8],
-    appendTo: document.body,
-    getReferenceClientRect: () => virtualRef.getBoundingClientRect(),
-    hideOnClick: false,
-    onShow(instance) {
-      const rect = instance.reference.getBoundingClientRect()
-      console.log('Tippy tooltip shown with reference rect:', rect)
-    },
-    onHide() {
-      console.log('Tippy tooltip hidden')
-    },
-    onClickOutside() {
-      hideTooltip()
-    }
-  })
-  
-  // Add event listeners to tooltip buttons using event delegation
-  tooltipContent.addEventListener('click', (e) => {
-    const button = e.target.closest('button')
-    if (!button) return
-    
-    e.preventDefault()
-    e.stopPropagation()
-    
-    const actionType = button.getAttribute('data-action')
-    if (actionType === 'apply') {
-      applySuggestion(action, range)
-    } else if (actionType === 'ignore') {
-      ignoreSuggestion(action)
-    }
-  })
-  
-  // Show the tooltip
-  currentTippyInstance.show()
-}
-
-/**
- * Hide tooltip and cleanup
- */
-function hideTooltip() {
-  if (currentTippyInstance) {
-    currentTippyInstance.destroy()
-    currentTippyInstance = null
-  }
-}
 
 /**
  * Apply suggestion with support for append, delete, and replace operations
@@ -366,53 +154,6 @@ function ignoreSuggestion(action) {
   hideTooltip()
 }
 
-/**
- * Get display text for the action context
- * @param {Object} action - Error action data
- * @returns {string} - Text to display in tooltip
- */
-function getDisplayTextForAction(action) {
-  if (!action.action.startsWith('$APPEND_')) {
-    return action.original || ''
-  }
-  
-  // For append operations, try to get context from view
-  if (view) {
-    // This is a simplified version - you might want to enhance this
-    // based on your specific append logic
-    return '此处'
-  }
-  
-  return '此处'
-}
-
-/**
- * Get appropriate button text based on action type
- * @param {Object} action - Error action data
- * @returns {string} - Button text
- */
-function getApplyButtonTextForAction(action) {
-  if (!action) return '应用修改'
-  
-  if (action.action.startsWith('$APPEND_')) {
-    return '添加'
-  } else if (action.action === '$DELETE') {
-    return '删除'
-  } else {
-    return '替换'
-  }
-}
-
-/**
- * Get CSS class for confidence level
- * @param {number} confidence - Confidence value (0-1)
- * @returns {string} - CSS class name
- */
-function getConfidenceClass(confidence) {
-  if (confidence >= 0.8) return 'confidence-high'
-  if (confidence >= 0.6) return 'confidence-medium'
-  return 'confidence-low'
-}
 
 
 /**
@@ -430,13 +171,16 @@ function createSyntaxCheckPlugin() {
       apply(tr, old, oldState, newState) {
         const newDeco = tr.getMeta('syntax-check-update')
         if (newDeco) {
+          // 使用语法检查返回的新装饰集合
           currentDeco = newDeco
           return currentDeco
         }
         if (tr.docChanged) {
+          // 文档内容有变化时，清空装饰
           currentDeco = DecorationSet.empty
           return currentDeco
         }
+        // 保持原有装饰
         return currentDeco
       }
     },
@@ -458,6 +202,11 @@ function createSyntaxCheckPlugin() {
         }
       }
       
+      /**
+       * 延迟400ms后执行 `check` 函数，如果在这段时间内再次调用，则会清除上一次的定时器，
+       * 保证 `check` 只会在最后一次调用后执行一次。
+       * 主要用于防抖处理，比如用户输入等高频事件。
+       */
       function scheduleCheck() {
         if (timeout) clearTimeout(timeout)
         timeout = setTimeout(check, 400)
@@ -471,6 +220,7 @@ function createSyntaxCheckPlugin() {
         
         // Check if we clicked on a syntax error highlight
         const clickedElement = event.target
+        // 使用 closest 方法查找最近的语法错误高亮元素
         const syntaxErrorElement = clickedElement.closest('.syntax-error-highlight')
         if (!syntaxErrorElement) {
           hideTooltip()
@@ -501,8 +251,15 @@ function createSyntaxCheckPlugin() {
             console.log('Found syntax error decoration:', spec.errorAction)
             console.log('Range for positioning:', spec.errorRange)
             
-            // Use ProseMirror coordinates for positioning instead of DOM element
-            showTooltip(spec.errorAction, spec.errorRange, syntaxErrorElement)
+            // Use extracted tooltip utility
+            showTooltip(
+              spec.errorAction, 
+              spec.errorRange, 
+              syntaxErrorElement, 
+              view,
+              applySuggestion,
+              ignoreSuggestion
+            )
             return true
           }
         }
@@ -511,6 +268,11 @@ function createSyntaxCheckPlugin() {
         return false
       }
       
+      /**
+       * 更新 ProseMirror 编辑器的属性：
+       * - handleDOMEvents.input: 当输入事件发生时，调用 scheduleCheck() 进行检查，并返回 false 以允许默认处理。
+       * - handleClick: 设置自定义点击事件处理函数。
+       */
       editorView.setProps({
         handleDOMEvents: {
           input: () => { scheduleCheck(); return false }
@@ -567,15 +329,6 @@ function combineDecorationsPlugin() {
 }
 
 const syntaxPluginKey = new PluginKey('syntax-check')
-
-
-function highlightHWords() {
-  if (view) {
-    // 触发plugin重新计算装饰
-    const tr = view.state.tr.setMeta('highlight-h-words', true)
-    view.dispatch(tr)
-  }
-}
 
 onMounted(() => {
   // 定义初始化内容
