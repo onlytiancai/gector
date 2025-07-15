@@ -26,23 +26,7 @@ let currentTippyInstance = null
 // Track ignored errors to prevent re-highlighting
 const ignoredErrors = new Set()
 
-// Store current syntax check results
-let currentSyntaxData = null
 
-/**
- * 匹配文本中所有包含"h"的单词，并返回它们在文本中的起止位置。
- * @param {string} text - 要匹配的文本
- * @returns {Array<{from: number, to: number}>} - 每个匹配单词的起止位置
- */
-function findHWordRanges(text) {
-  const ranges = []
-  const regex = /\b\w*h\w*\b/gi
-  let match
-  while ((match = regex.exec(text)) !== null) {
-    ranges.push({ from: match.index, to: match.index + match[0].length })
-  }
-  return ranges
-}
 
 /**
  * Fetch syntax check with full error data
@@ -57,7 +41,6 @@ async function fetchSyntaxCheck(sentText) {
       body: JSON.stringify({ sentence: sentText })
     })
     const data = await resp.json()
-    currentSyntaxData = data
     
     const ranges = []
     for (const action of data.actions) {
@@ -79,29 +62,6 @@ async function fetchSyntaxCheck(sentText) {
   }
 }
 
-/**
- * 遍历整个 ProseMirror 文档，查找所有包含字母 "h" 的单词，并为这些单词生成装饰（Decoration）。
- * @param {Node} doc - ProseMirror 的文档根节点
- * @returns {DecorationSet} - 包含所有高亮装饰的集合
- */
-function getHWordDecorations(doc) {
-  const decorations = []
-  doc.descendants((node, pos) => {
-    if (node.isText) {
-      const text = node.text
-      if (!text) return
-      // 利用 findHWordRanges 获取所有匹配范围
-      const ranges = findHWordRanges(text)
-      for (const { from, to } of ranges) {
-        // 计算单词在整个文档中的绝对位置
-        decorations.push(
-          Decoration.inline(pos + from, pos + to, { class: 'h-word-highlight' })
-        )
-      }
-    }
-  })
-  return DecorationSet.create(doc, decorations)
-}
 
 /**
  * Generate syntax error decorations with click event handling
@@ -456,54 +416,6 @@ function getConfidenceClass(confidence) {
   return 'confidence-low'
 }
 
-// 高亮plugin
-/**
- * 创建一个ProseMirror插件，用于高亮所有包含"h"字母的单词。
- * 
- * ProseMirror插件（Plugin）可以扩展编辑器的行为。此插件主要用于管理装饰（Decoration）。
- * 装饰（Decoration）是ProseMirror用于在文档中渲染额外样式（如高亮、下划线等）的机制，
- * 不会改变实际文档内容，只影响显示。
- * 
- * 该插件的核心是state字段，定义了如何初始化和更新装饰集合（DecorationSet）。
- * - init: 插件初始化时调用，生成初始装饰集合。
- * - apply: 每当有事务（tr）发生时调用，决定是否需要重新计算装饰集合。
- *   - tr.docChanged: 文档内容发生变化时为true。
- *   - tr.getMeta('highlight-h-words'): 外部通过事务meta强制触发高亮时为true。
- * 
- * props字段中的decorations方法，返回当前编辑器状态下的装饰集合，供ProseMirror渲染。
- */
-function createHighlightPlugin() {
-  return new Plugin({
-    key: highlightPluginKey,
-    state: {
-      /**
-       * 插件初始化时调用，生成初始装饰集合。
-       * @param {*} _ - 插件配置参数（未用到）
-       * @param {*} param1 - 包含doc属性的对象，doc为当前文档节点
-       * @returns DecorationSet
-       */
-      init(_, { doc }) {
-        return getHWordDecorations(doc)
-      },
-      /**
-       * 每当有事务（tr）发生时调用，决定是否需要重新计算装饰集合。
-       * @param {*} tr - 当前事务
-       * @param {*} old - 旧的装饰集合
-       * @param {*} oldState - 旧的编辑器状态
-       * @param {*} newState - 新的编辑器状态
-       * @returns DecorationSet
-       */
-      apply(tr, old, oldState, newState) {
-        // 如果文档有变更或外部触发（如点击高亮按钮），则重新计算装饰
-        if (tr.docChanged || tr.getMeta('highlight-h-words')) {
-          return getHWordDecorations(newState.doc)
-        }
-        // 否则复用旧的装饰集合
-        return old
-      }
-    }
-  })
-}
 
 /**
  * 语法检查异步插件
@@ -635,13 +547,7 @@ function combineDecorationsPlugin() {
     props: {
       decorations(state) {
         let decos = []
-        // highlight
-        const highlight = highlightPluginKey.get(state)
-        console.log('Highlight decorations:', highlight)
-        if (highlight) {
-          const d = highlight.getState(state)
-          if (d && !d.isEmpty) decos.push(d)
-        }
+        
         // syntax check
         const syntax = syntaxPluginKey.get(state)
         console.log('Syntax check decorations:', syntax)
@@ -649,6 +555,7 @@ function combineDecorationsPlugin() {
           const d = syntax.getState(state)
           if (d && !d.isEmpty) decos.push(d)
         }
+
         if (decos.length === 0) return null
         if (decos.length === 1) return decos[0]
         let result = decos[0]
@@ -661,7 +568,6 @@ function combineDecorationsPlugin() {
   })
 }
 
-const highlightPluginKey = new PluginKey('highlight-h-words')
 const syntaxPluginKey = new PluginKey('syntax-check')
 
 
@@ -683,7 +589,6 @@ onMounted(() => {
     doc: DOMParser.fromSchema(basicSchema).parse(initialContent),
     plugins: [
       ...exampleSetup({ schema: basicSchema }),
-      createHighlightPlugin(),
       createSyntaxCheckPlugin(),
       combineDecorationsPlugin(),
     ]
@@ -718,10 +623,6 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.h-word-highlight {
-  background: yellow;
-  border-radius: 2px;
-}
 
 .syntax-error-highlight {
   background: #ffb3b3;
