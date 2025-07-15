@@ -84,8 +84,6 @@ function getSyntaxErrorDecorations(doc, ranges) {
           decorations.push(
             Decoration.inline(pos + nodeFrom, pos + nodeTo, {
               class: 'syntax-error-highlight',
-              'data-error': JSON.stringify(action),
-              'data-range': JSON.stringify({ from: pos + nodeFrom, to: pos + nodeTo })
             }, {
               // Store in spec for internal access
               errorAction: action,
