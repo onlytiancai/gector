@@ -250,10 +250,42 @@ function analyzeTextNodeChanges(tr, oldDoc, newDoc) {
     console.log('Step JSON:', step.toJSON())
     
     if (step.from !== undefined && step.to !== undefined) {
+      /*
+      from和to 通常指的是 ProseMirror 的“步骤”（step）对象中的位置。
+      它们表示在文档中要应用更改的起始位置（from）和结束位置（to）。
+
+      具体来说：
+
+      from：更改开始的位置（偏移量，通常是字符或节点索引）。
+      to：更改结束的位置。
+      这两个位置是针对**旧文档（oldDoc）**的，因为步骤（step）是在旧文档上定义的操作，
+      应用后才得到新文档（newDoc）。
+      换句话说，step 的 from 和 to 是描述如何从 oldDoc 变成 newDoc 的位置范围。
+
+      补充说明：
+      如果你在处理 ProseMirror 的 transaction 或 step，
+      通常这些位置都是基于应用更改前的文档（即 oldDoc）。      
+      */
       const from = step.from
       const to = step.to
       
       console.log(`Position range: ${from} → ${to}`)
+      // 只收集 from 和 to 之间的所有节点
+      const nodesBetween = []
+
+      oldDoc.descendants((node, pos, parent) => {
+        if (pos + node.nodeSize > from && pos < to) {
+          nodesBetween.push({ node, pos, parent })
+        }
+      })
+
+      // 输出 from 和 to 之间的所有节点信息
+      console.log('Nodes between from and to:', nodesBetween.map(info => ({
+        type: info.node.type.name,
+        pos: info.pos,
+        text: info.node.isText ? info.node.text : null,
+        nodeSize: info.node.nodeSize
+      })))
       
       // 获取修改前的内容
       if (from <= oldDoc.content.size && to <= oldDoc.content.size) {
@@ -399,6 +431,15 @@ function createSyntaxCheckPlugin() {
         currentDeco = DecorationSet.empty
         return currentDeco
       },
+      /**
+       * Applies a transformation to the editor state.
+       * 
+       * @param {Transaction} tr - The ProseMirror transaction object representing changes to be applied.
+       * @param {any} old - The previous value or state before the transaction.
+       * @param {EditorState} oldState - The previous ProseMirror editor state.
+       * @param {EditorState} newState - The new ProseMirror editor state after the transaction.
+       * @returns {any} The updated value or state after applying the transaction.
+       */
       apply(tr, old, oldState, newState) {
         // 🆕 添加文本节点变化分析
         if (tr.docChanged) {
