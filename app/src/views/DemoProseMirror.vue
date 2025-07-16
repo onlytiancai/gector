@@ -59,36 +59,115 @@ async function fetchSyntaxCheck(sentText) {
 
 
 /**
- * Generate syntax error decorations with click event handling
- * Store error data in both spec and attrs for reliable access
+ * Fetch syntax check for individual text node
+ * @param {string} nodeText - Text content of the node
+ * @param {number} nodePos - Position of the node in the document
+ * @returns {Promise<Array>} - Error ranges with absolute positions
+ */
+async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
+  console.log('fetchTextNodeSyntaxCheck:', nodeText, 'at position:', nodePos)
+  try {
+    const resp = await fetch('/api/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentence: nodeText })
+    })
+    const data = await resp.json()
+    const ranges = []
+    for (const action of data.actions) {
+      console.log('fetchTextNodeSyntaxCheck:processing action:', nodeText, nodePos, action.token_start, action.token_end)
+      if (action.token_end !== undefined && action.token_start !== undefined) {
+        // Calculate absolute positions in document
+        const absoluteStart = nodePos + action.token_start
+        const absoluteEnd = nodePos + action.token_end
+        const errorKey = `${absoluteStart}-${absoluteEnd}-${action.original}`
+        
+        if (!ignoredErrors.has(errorKey)) {
+          ranges.push({ 
+            from: absoluteStart, 
+            to: absoluteEnd,
+            action: {
+              ...action,
+              // Store original relative positions for reference
+              original_token_start: action.token_start,
+              original_token_end: action.token_end,
+              // Update to absolute positions
+              token_start: absoluteStart,
+              token_end: absoluteEnd
+            }
+          })
+        }
+      }
+    }
+    return ranges
+  } catch (error) {
+    console.error('Text node syntax check failed:', error)
+    return []
+  }
+}
+
+/**
+ * Check syntax for all text nodes in the document
  * @param {Node} doc - ProseMirror document
- * @param {Array} ranges - Error ranges with action data
+ * @returns {Promise<Array>} - All error ranges across all text nodes
+ */
+async function checkAllTextNodes(doc) {
+  const allRanges = []
+  const checkPromises = []
+  
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text && node.text.trim()) {
+      console.log(`checkAllTextNodes: pos=${pos}, node.type=${node.type.name}, node.text=[${node.text}]`)
+      const promise = fetchTextNodeSyntaxCheck(node.text, pos)
+        .then(ranges => {
+          allRanges.push(...ranges)
+        })
+        .catch(error => {
+          console.error(`Failed to check text node at position ${pos}:`, error)
+        })
+      checkPromises.push(promise)
+    }
+  })
+  
+  await Promise.all(checkPromises)
+  return allRanges
+}
+
+
+/**
+ * Generate syntax error decorations with proper position mapping
+ * @param {Node} doc - ProseMirror document
+ * @param {Array} ranges - Error ranges with absolute positions
  * @returns {DecorationSet}
  */
 function getSyntaxErrorDecorations(doc, ranges) {
   const decorations = []
-  doc.descendants((node, pos) => {
-    if (node.isText && node.text) {
-      const textLen = node.text.length
-      for (const range of ranges) {
-        const { from, to, action } = range
-        const nodeFrom = Math.max(0, from - pos)
-        const nodeTo = Math.min(textLen, to - pos)
-        
-        if (nodeFrom < nodeTo && nodeFrom < textLen && nodeTo > 0) {
-          decorations.push(
-            Decoration.inline(pos + nodeFrom, pos + nodeTo, {
-              class: 'syntax-error-highlight',
-            }, {
-              // Store in spec for internal access
-              errorAction: action,
-              errorRange: { from: pos + nodeFrom, to: pos + nodeTo }
-            })
-          )
-        }
+  
+  // Create decorations directly from absolute positions
+  for (const range of ranges) {
+    const { from, to, action } = range
+    
+    // Validate positions are within document bounds
+    if (from >= 0 && to <= doc.content.size && from < to) {
+      try {
+        decorations.push(
+          Decoration.inline(from, to, {
+            class: 'syntax-error-highlight',
+          }, {
+            // Store in spec for internal access
+            errorAction: action,
+            errorRange: { from, to }
+          })
+        )
+        console.log(`Created decoration: ${from}-${to} for "${action.original}"`)
+      } catch (error) {
+        console.error(`Failed to create decoration for range ${from}-${to}:`, error)
       }
+    } else {
+      console.warn(`Invalid range: ${from}-${to}, doc size: ${doc.content.size}`)
     }
-  })
+  }
+  
   return DecorationSet.create(doc, decorations)
 }
 
@@ -143,8 +222,7 @@ function ignoreSuggestion(action) {
   
   // Trigger re-check to update decorations
   if (view) {
-    const text = view.state.doc.textContent
-    fetchSyntaxCheck(text).then(ranges => {
+    checkAllTextNodes(view.state.doc).then(ranges => {
       const deco = getSyntaxErrorDecorations(view.state.doc, ranges)
       const tr = view.state.tr.setMeta('syntax-check-update', deco)
       view.dispatch(tr)
@@ -190,9 +268,8 @@ function createSyntaxCheckPlugin() {
       
       async function check() {
         if (destroyed) return
-        const text = editorView.state.doc.textContent
         try {
-          const ranges = await fetchSyntaxCheck(text)
+          const ranges = await checkAllTextNodes(editorView.state.doc)
           if (destroyed) return
           const deco = getSyntaxErrorDecorations(editorView.state.doc, ranges)
           const tr = editorView.state.tr.setMeta('syntax-check-update', deco)
@@ -216,8 +293,7 @@ function createSyntaxCheckPlugin() {
        * Handle click events with improved positioning using ProseMirror coordinates
        */
       function handleClick(view, pos, event) {
-        console.log('ProseMirror click at position:', pos, 'event target:', event.target)
-        
+       
         // Check if we clicked on a syntax error highlight
         const clickedElement = event.target
         // 使用 closest 方法查找最近的语法错误高亮元素
@@ -310,7 +386,7 @@ function combineDecorationsPlugin() {
         
         // syntax check
         const syntax = syntaxPluginKey.get(state)
-        console.log('Syntax check decorations:', syntax)
+        //console.log('Syntax check decorations:', syntax)
         if (syntax) {
           const d = syntax.getState(state)
           if (d && !d.isEmpty) decos.push(d)
@@ -333,7 +409,7 @@ const syntaxPluginKey = new PluginKey('syntax-check')
 onMounted(() => {
   // 定义初始化内容
   const initialContent = document.createElement('div')
-  initialContent.innerHTML = '<p>hello world, my name is a lili. Here is apple.</p>'
+  initialContent.innerHTML = '<p>hello world, my name is a lili.</p><p>here is a apple.</p>'
 
   // 创建编辑器状态
   const state = EditorState.create({
