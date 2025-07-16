@@ -62,13 +62,12 @@ async function fetchSyntaxCheck(sentText) {
 const textNodeCache = new Map()
 
 /**
- * Generate a cache key for a text node
+ * Generate a cache key for a text node using only text content
  * @param {string} nodeText - Text content of the node
- * @param {number} nodePos - Position of the node in the document
  * @returns {string} - Cache key
  */
-function getTextNodeCacheKey(nodeText, nodePos) {
-  return `${nodePos}:${nodeText}`
+function getTextNodeCacheKey(nodeText) {
+  return nodeText
 }
 
 /**
@@ -81,10 +80,32 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
   console.log('fetchTextNodeSyntaxCheck:', nodeText, 'at position:', nodePos)
   
   // Check cache first
-  const cacheKey = getTextNodeCacheKey(nodeText, nodePos)
+  const cacheKey = getTextNodeCacheKey(nodeText)
   if (textNodeCache.has(cacheKey)) {
     console.log('Using cached result for:', cacheKey)
-    return textNodeCache.get(cacheKey)
+    const cachedResult = textNodeCache.get(cacheKey)
+    
+    // Recalculate absolute positions based on current nodePos
+    const ranges = cachedResult.map(cachedRange => {
+      const absoluteStart = nodePos + cachedRange.action.original_token_start
+      const absoluteEnd = nodePos + cachedRange.action.original_token_end
+      const errorKey = `${absoluteStart}-${absoluteEnd}-${cachedRange.action.original}`
+      
+      if (!ignoredErrors.has(errorKey)) {
+        return {
+          from: absoluteStart,
+          to: absoluteEnd,
+          action: {
+            ...cachedRange.action,
+            token_start: absoluteStart,
+            token_end: absoluteEnd
+          }
+        }
+      }
+      return null
+    }).filter(Boolean)
+    
+    return ranges
   }
   
   try {
@@ -95,6 +116,8 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
     })
     const data = await resp.json()
     const ranges = []
+    const cacheableResult = []
+    
     for (const action of data.actions) {
       console.log('fetchTextNodeSyntaxCheck:processing action:', nodeText, nodePos, action.token_start, action.token_end)
       if (action.token_end !== undefined && action.token_start !== undefined) {
@@ -103,16 +126,25 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
         const absoluteEnd = nodePos + action.token_end
         const errorKey = `${absoluteStart}-${absoluteEnd}-${action.original}`
         
+        // Store relative positions for caching
+        const cacheableAction = {
+          ...action,
+          original_token_start: action.token_start,
+          original_token_end: action.token_end
+        }
+        
+        cacheableResult.push({
+          action: cacheableAction
+        })
+        
         if (!ignoredErrors.has(errorKey)) {
           ranges.push({ 
             from: absoluteStart, 
             to: absoluteEnd,
             action: {
               ...action,
-              // Store original relative positions for reference
               original_token_start: action.token_start,
               original_token_end: action.token_end,
-              // Update to absolute positions
               token_start: absoluteStart,
               token_end: absoluteEnd
             }
@@ -121,9 +153,9 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
       }
     }
     
-    // Cache the result
-    textNodeCache.set(cacheKey, ranges)
-    console.log('Cached result for:', cacheKey, 'ranges:', ranges.length)
+    // Cache the result with relative positions
+    textNodeCache.set(cacheKey, cacheableResult)
+    console.log('Cached result for:', cacheKey, 'ranges:', cacheableResult.length)
     
     return ranges
   } catch (error) {
@@ -140,44 +172,38 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
 async function checkAllTextNodes(doc) {
   const allRanges = []
   const checkPromises = []
-  const currentTextNodes = new Set()
+  const currentTexts = new Set()
   
   doc.descendants((node, pos) => {
     if (node.isText && node.text && node.text.trim()) {
       console.log(`checkAllTextNodes: pos=${pos}, node.type=${node.type.name}, node.text=[${node.text}]`)
       
-      const cacheKey = getTextNodeCacheKey(node.text, pos)
-      currentTextNodes.add(cacheKey)
+      const cacheKey = getTextNodeCacheKey(node.text)
+      currentTexts.add(cacheKey)
       
-      // Check if we have a cached result
-      if (textNodeCache.has(cacheKey)) {
-        console.log('Using cached result for text node:', cacheKey)
-        const cachedRanges = textNodeCache.get(cacheKey)
-        allRanges.push(...cachedRanges)
-      } else {
-        // Need to fetch new result
-        const promise = fetchTextNodeSyntaxCheck(node.text, pos)
-          .then(ranges => {
-            allRanges.push(...ranges)
-          })
-          .catch(error => {
-            console.error(`Failed to check text node at position ${pos}:`, error)
-          })
-        checkPromises.push(promise)
-      }
+      // Need to fetch new result
+      const promise = fetchTextNodeSyntaxCheck(node.text, pos)
+        .then(ranges => {
+          allRanges.push(...ranges)
+        })
+        .catch(error => {
+          console.error(`Failed to check text node at position ${pos}:`, error)
+        })
+      checkPromises.push(promise)
+      
     }
   })
   
-  // Clean up cache for text nodes that no longer exist
+  // Clean up cache for text that no longer exists
   const cacheKeysToRemove = []
   for (const cacheKey of textNodeCache.keys()) {
-    if (!currentTextNodes.has(cacheKey)) {
+    if (!currentTexts.has(cacheKey)) {
       cacheKeysToRemove.push(cacheKey)
     }
   }
   
   if (cacheKeysToRemove.length > 0) {
-    console.log('Cleaning up cache for removed text nodes:', cacheKeysToRemove.length)
+    console.log('Cleaning up cache for removed texts:', cacheKeysToRemove.length)
     for (const keyToRemove of cacheKeysToRemove) {
       textNodeCache.delete(keyToRemove)
     }
