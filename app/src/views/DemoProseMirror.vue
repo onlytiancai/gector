@@ -58,14 +58,35 @@ async function fetchSyntaxCheck(sentText) {
 }
 
 
+// Cache for text node syntax check results
+const textNodeCache = new Map()
+
 /**
- * Fetch syntax check for individual text node
+ * Generate a cache key for a text node
+ * @param {string} nodeText - Text content of the node
+ * @param {number} nodePos - Position of the node in the document
+ * @returns {string} - Cache key
+ */
+function getTextNodeCacheKey(nodeText, nodePos) {
+  return `${nodePos}:${nodeText}`
+}
+
+/**
+ * Fetch syntax check for individual text node with caching
  * @param {string} nodeText - Text content of the node
  * @param {number} nodePos - Position of the node in the document
  * @returns {Promise<Array>} - Error ranges with absolute positions
  */
 async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
   console.log('fetchTextNodeSyntaxCheck:', nodeText, 'at position:', nodePos)
+  
+  // Check cache first
+  const cacheKey = getTextNodeCacheKey(nodeText, nodePos)
+  if (textNodeCache.has(cacheKey)) {
+    console.log('Using cached result for:', cacheKey)
+    return textNodeCache.get(cacheKey)
+  }
+  
   try {
     const resp = await fetch('/api/actions', {
       method: 'POST',
@@ -99,6 +120,11 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
         }
       }
     }
+    
+    // Cache the result
+    textNodeCache.set(cacheKey, ranges)
+    console.log('Cached result for:', cacheKey, 'ranges:', ranges.length)
+    
     return ranges
   } catch (error) {
     console.error('Text node syntax check failed:', error)
@@ -107,32 +133,62 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
 }
 
 /**
- * Check syntax for all text nodes in the document
+ * Check syntax for all text nodes in the document with caching optimization
  * @param {Node} doc - ProseMirror document
  * @returns {Promise<Array>} - All error ranges across all text nodes
  */
 async function checkAllTextNodes(doc) {
   const allRanges = []
   const checkPromises = []
+  const currentTextNodes = new Set()
   
   doc.descendants((node, pos) => {
     if (node.isText && node.text && node.text.trim()) {
       console.log(`checkAllTextNodes: pos=${pos}, node.type=${node.type.name}, node.text=[${node.text}]`)
-      const promise = fetchTextNodeSyntaxCheck(node.text, pos)
-        .then(ranges => {
-          allRanges.push(...ranges)
-        })
-        .catch(error => {
-          console.error(`Failed to check text node at position ${pos}:`, error)
-        })
-      checkPromises.push(promise)
+      
+      const cacheKey = getTextNodeCacheKey(node.text, pos)
+      currentTextNodes.add(cacheKey)
+      
+      // Check if we have a cached result
+      if (textNodeCache.has(cacheKey)) {
+        console.log('Using cached result for text node:', cacheKey)
+        const cachedRanges = textNodeCache.get(cacheKey)
+        allRanges.push(...cachedRanges)
+      } else {
+        // Need to fetch new result
+        const promise = fetchTextNodeSyntaxCheck(node.text, pos)
+          .then(ranges => {
+            allRanges.push(...ranges)
+          })
+          .catch(error => {
+            console.error(`Failed to check text node at position ${pos}:`, error)
+          })
+        checkPromises.push(promise)
+      }
     }
   })
   
+  // Clean up cache for text nodes that no longer exist
+  const cacheKeysToRemove = []
+  for (const cacheKey of textNodeCache.keys()) {
+    if (!currentTextNodes.has(cacheKey)) {
+      cacheKeysToRemove.push(cacheKey)
+    }
+  }
+  
+  if (cacheKeysToRemove.length > 0) {
+    console.log('Cleaning up cache for removed text nodes:', cacheKeysToRemove.length)
+    for (const keyToRemove of cacheKeysToRemove) {
+      textNodeCache.delete(keyToRemove)
+    }
+  }
+  
+  // Wait for all new API calls to complete
   await Promise.all(checkPromises)
+  
+  console.log(`checkAllTextNodes completed. Total ranges: ${allRanges.length}, Cache size: ${textNodeCache.size}`)
   return allRanges
 }
-
 
 /**
  * Generate syntax error decorations with proper position mapping
@@ -219,6 +275,7 @@ function ignoreSuggestion(action) {
   
   const errorKey = `${action.token_start}-${action.token_end}-${action.original}`
   ignoredErrors.add(errorKey)
+  
   
   // Trigger re-check to update decorations
   if (view) {
@@ -442,9 +499,9 @@ function createSyntaxCheckPlugin() {
        */
       apply(tr, old, oldState, newState) {
         // 🆕 添加文本节点变化分析
-        if (tr.docChanged) {
-          analyzeTextNodeChanges(tr, oldState.doc, newState.doc)
-        }
+        //if (tr.docChanged) {
+        //  analyzeTextNodeChanges(tr, oldState.doc, newState.doc)
+        //}
 
         const newDeco = tr.getMeta('syntax-check-update')
         if (newDeco) {
