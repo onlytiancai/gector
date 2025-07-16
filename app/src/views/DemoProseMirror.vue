@@ -351,14 +351,60 @@ function createSyntaxCheckPlugin() {
        */
       editorView.setProps({
         handleDOMEvents: {
-          input: () => { scheduleCheck(); return false }
+          /*
+          DOM事件驱动: 直接响应浏览器的原生 input DOM事件
+          更早触发: 在用户键盘输入、粘贴等操作时立即触发
+          更广泛覆盖: 捕获所有可能的输入操作，包括一些ProseMirror可能未完全处理的边缘情况
+          DOM层面: 在DOM事件层面工作
+          */
+          input: () => { 
+            scheduleCheck(); 
+            return false 
+          }
         },
         handleClick: handleClick
       })
+      /*
+      这里调用 scheduleCheck() 通常是为了在组件初始化时进行一次文本检查。
+      这样可以确保页面刚加载或内容刚渲染时，用户看到的文本已经被检查过语法或错误，而不是等到用户操作后才开始检查。
+
+      常见场景：
+      - 页面首次加载时自动检查已有内容。
+      - 初始化编辑器时确保内容状态是最新的。
       
+      注意事项：
+      - 如果 scheduleCheck() 里有异步操作或依赖于某些数据，建议放在合适的生命周期钩子（如 onMounted）里调用。
+      - 如果内容为空或不需要检查，可以加条件判断，避免无效检查。
+      */
       scheduleCheck()
       
       return {
+        /*
+        这个 update(view, prevState) 函数通常是 ProseMirror 插件的 view 生命周期钩子之一。它会在编辑器的状态发生变化时被调用，比如：
+
+        - 用户输入或删除文本
+        - 文档内容发生变更（如插入、删除节点）
+        - 编辑器状态（如 selection、marks）发生变化
+
+        只有当文档内容（doc）发生变化时，才会执行 scheduleCheck()。这意味着：
+        - 用户实际修改了文本内容时会触发
+        - 光标移动、样式变化但内容未变时不会触发
+        
+        特点：
+        - 状态变化驱动: 响应ProseMirror文档状态的变化
+        - 有条件触发: 只有当文档内容真正改变时才触发（view.state.doc !== prevState.doc）
+        - 更精确: 过滤掉光标移动、选择变化等不影响内容的操作
+        - ProseMirror层面: 在编辑器状态层面工作
+
+        为什么需要两个（handleDOMEvents.input和update(view, prevState)）？
+        - 冗余保障: 防止某些边缘情况下的遗漏
+        - 不同触发时机: DOM事件可能比状态更新更早触发
+        - 不同覆盖范围: DOM事件覆盖更广，状态检查更精确
+        - 防抖机制: 由于 scheduleCheck 内部有400ms防抖，多次调用不会造成性能问题
+
+        即使两个地方都调用，最终只会在最后一次调用的400ms后执行一次检查，
+        确保了性能优化的同时提供了可靠的触发保障。
+        */
         update(view, prevState) {
           if (view.state.doc !== prevState.doc) {
             scheduleCheck()
