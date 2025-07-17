@@ -71,7 +71,56 @@ function getTextNodeCacheKey(nodeText) {
 }
 
 /**
- * Fetch syntax check for individual text node with caching
+ * Split text into sentences using simple punctuation-based rules
+ * @param {string} text - Text to split
+ * @returns {Array<{text: string, offset: number}>} - Array of sentences with their offsets
+ */
+function splitIntoSentences(text) {
+  const sentences = []
+  const sentenceRegex = /[.!?]+/g
+  let lastIndex = 0
+  let match
+  
+  while ((match = sentenceRegex.exec(text)) !== null) {
+    const endIndex = match.index + match[0].length
+    const sentence = text.slice(lastIndex, endIndex).trim()
+    
+    if (sentence.length > 0) {
+      sentences.push({
+        text: sentence,
+        offset: lastIndex
+      })
+    }
+    
+    lastIndex = endIndex
+  }
+  
+  // Handle remaining text if no punctuation at the end
+  const remaining = text.slice(lastIndex).trim()
+  if (remaining.length > 0) {
+    sentences.push({
+      text: remaining,
+      offset: lastIndex
+    })
+  }
+  
+  return sentences
+}
+
+// Cache for sentence syntax check results
+const sentenceCache = new Map()
+
+/**
+ * Generate a cache key for a sentence
+ * @param {string} sentenceText - Text content of the sentence
+ * @returns {string} - Cache key
+ */
+function getSentenceCacheKey(sentenceText) {
+  return sentenceText.trim()
+}
+
+/**
+ * Fetch syntax check for individual text node with sentence-based caching
  * @param {string} nodeText - Text content of the node
  * @param {number} nodePos - Position of the node in the document
  * @returns {Promise<Array>} - Error ranges with absolute positions
@@ -79,54 +128,89 @@ function getTextNodeCacheKey(nodeText) {
 async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
   console.log('fetchTextNodeSyntaxCheck:', nodeText, 'at position:', nodePos)
   
-  // Check cache first
-  const cacheKey = getTextNodeCacheKey(nodeText)
-  if (textNodeCache.has(cacheKey)) {
-    console.log('Using cached result for:', cacheKey)
-    const cachedResult = textNodeCache.get(cacheKey)
+  // Split node text into sentences
+  const sentences = splitIntoSentences(nodeText)
+  console.log('Split into sentences:', sentences)
+  
+  const allRanges = []
+  const checkPromises = []
+  
+  for (const sentence of sentences) {
+    const cacheKey = getSentenceCacheKey(sentence.text)
     
-    // Recalculate absolute positions based on current nodePos
-    const ranges = cachedResult.map(cachedRange => {
-      const absoluteStart = nodePos + cachedRange.action.original_token_start
-      const absoluteEnd = nodePos + cachedRange.action.original_token_end
-      const errorKey = `${absoluteStart}-${absoluteEnd}-${cachedRange.action.original}`
+    if (sentenceCache.has(cacheKey)) {
+      console.log('Using cached result for sentence:', cacheKey)
+      const cachedResult = sentenceCache.get(cacheKey)
       
-      if (!ignoredErrors.has(errorKey)) {
-        return {
-          from: absoluteStart,
-          to: absoluteEnd,
-          action: {
-            ...cachedRange.action,
-            token_start: absoluteStart,
-            token_end: absoluteEnd
+      // Recalculate absolute positions based on current nodePos and sentence offset
+      const ranges = cachedResult.map(cachedRange => {
+        const absoluteStart = nodePos + sentence.offset + cachedRange.action.original_token_start
+        const absoluteEnd = nodePos + sentence.offset + cachedRange.action.original_token_end
+        const errorKey = `${absoluteStart}-${absoluteEnd}-${cachedRange.action.original}`
+        
+        if (!ignoredErrors.has(errorKey)) {
+          return {
+            from: absoluteStart,
+            to: absoluteEnd,
+            action: {
+              ...cachedRange.action,
+              token_start: absoluteStart,
+              token_end: absoluteEnd
+            }
           }
         }
-      }
-      return null
-    }).filter(Boolean)
-    
-    return ranges
+        return null
+      }).filter(Boolean)
+      
+      allRanges.push(...ranges)
+    } else {
+      // Need to fetch new result for this sentence
+      const promise = fetchSentenceSyntaxCheck(sentence.text, nodePos + sentence.offset)
+        .then(ranges => {
+          allRanges.push(...ranges)
+        })
+        .catch(error => {
+          console.error(`Failed to check sentence "${sentence.text}":`, error)
+        })
+      checkPromises.push(promise)
+    }
   }
+  
+  // Wait for all new API calls to complete
+  await Promise.all(checkPromises)
+  
+  console.log(`fetchTextNodeSyntaxCheck completed. Total ranges: ${allRanges.length}`)
+  return allRanges
+}
+
+/**
+ * Fetch syntax check for individual sentence with caching
+ * @param {string} sentenceText - Text content of the sentence
+ * @param {number} sentenceAbsolutePos - Absolute position of the sentence in the document
+ * @returns {Promise<Array>} - Error ranges with absolute positions
+ */
+async function fetchSentenceSyntaxCheck(sentenceText, sentenceAbsolutePos) {
+  console.log('fetchSentenceSyntaxCheck:', sentenceText, 'at absolute position:', sentenceAbsolutePos)
   
   try {
     const resp = await fetch('/api/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sentence: nodeText })
+      body: JSON.stringify({ sentence: sentenceText })
     })
     const data = await resp.json()
     const ranges = []
     const cacheableResult = []
     
     for (const action of data.actions) {
-      console.log('fetchTextNodeSyntaxCheck:processing action:', nodeText, nodePos, action.token_start, action.token_end)
+      console.log('fetchSentenceSyntaxCheck:processing action:', sentenceText, sentenceAbsolutePos, action.token_start, action.token_end)
       if (action.token_end !== undefined && action.token_start !== undefined) {
         // Calculate absolute positions in document
-        const absoluteStart = nodePos + action.token_start
-        const absoluteEnd = nodePos + action.token_end
+        const absoluteStart = sentenceAbsolutePos + action.token_start
+        const absoluteEnd = sentenceAbsolutePos + action.token_end
         const errorKey = `${absoluteStart}-${absoluteEnd}-${action.original}`
         
-        // Store relative positions for caching
+        // Store relative positions for caching (relative to sentence start)
         const cacheableAction = {
           ...action,
           original_token_start: action.token_start,
@@ -154,34 +238,38 @@ async function fetchTextNodeSyntaxCheck(nodeText, nodePos) {
     }
     
     // Cache the result with relative positions
-    textNodeCache.set(cacheKey, cacheableResult)
-    console.log('Cached result for:', cacheKey, 'ranges:', cacheableResult.length)
+    const cacheKey = getSentenceCacheKey(sentenceText)
+    sentenceCache.set(cacheKey, cacheableResult)
+    console.log('Cached result for sentence:', cacheKey, 'ranges:', cacheableResult.length)
     
     return ranges
   } catch (error) {
-    console.error('Text node syntax check failed:', error)
+    console.error('Sentence syntax check failed:', error)
     return []
   }
 }
 
 /**
- * Check syntax for all text nodes in the document with caching optimization
+ * Check syntax for all text nodes in the document with sentence-based caching optimization
  * @param {Node} doc - ProseMirror document
  * @returns {Promise<Array>} - All error ranges across all text nodes
  */
 async function checkAllTextNodes(doc) {
   const allRanges = []
   const checkPromises = []
-  const currentTexts = new Set()
+  const currentSentences = new Set()
   
   doc.descendants((node, pos) => {
     if (node.isText && node.text && node.text.trim()) {
       console.log(`checkAllTextNodes: pos=${pos}, node.type=${node.type.name}, node.text=[${node.text}]`)
       
-      const cacheKey = getTextNodeCacheKey(node.text)
-      currentTexts.add(cacheKey)
+      // Track sentences from this node
+      const sentences = splitIntoSentences(node.text)
+      for (const sentence of sentences) {
+        currentSentences.add(getSentenceCacheKey(sentence.text))
+      }
       
-      // Need to fetch new result
+      // Process this node
       const promise = fetchTextNodeSyntaxCheck(node.text, pos)
         .then(ranges => {
           allRanges.push(...ranges)
@@ -190,29 +278,28 @@ async function checkAllTextNodes(doc) {
           console.error(`Failed to check text node at position ${pos}:`, error)
         })
       checkPromises.push(promise)
-      
     }
   })
   
-  // Clean up cache for text that no longer exists
+  // Clean up cache for sentences that no longer exist
   const cacheKeysToRemove = []
-  for (const cacheKey of textNodeCache.keys()) {
-    if (!currentTexts.has(cacheKey)) {
+  for (const cacheKey of sentenceCache.keys()) {
+    if (!currentSentences.has(cacheKey)) {
       cacheKeysToRemove.push(cacheKey)
     }
   }
   
   if (cacheKeysToRemove.length > 0) {
-    console.log('Cleaning up cache for removed texts:', cacheKeysToRemove.length)
+    console.log('Cleaning up cache for removed sentences:', cacheKeysToRemove.length)
     for (const keyToRemove of cacheKeysToRemove) {
-      textNodeCache.delete(keyToRemove)
+      sentenceCache.delete(keyToRemove)
     }
   }
   
   // Wait for all new API calls to complete
   await Promise.all(checkPromises)
   
-  console.log(`checkAllTextNodes completed. Total ranges: ${allRanges.length}, Cache size: ${textNodeCache.size}`)
+  console.log(`checkAllTextNodes completed. Total ranges: ${allRanges.length}, Cache size: ${sentenceCache.size}`)
   return allRanges
 }
 
