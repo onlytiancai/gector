@@ -14,6 +14,7 @@ import { exampleSetup } from 'prosemirror-example-setup'
 import { Plugin, PluginKey } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { showTooltip, hideTooltip } from '../utils/tooltip'
+import { analyzeTextNodeChanges } from '../utils/analyzeTextNodeChanges'
 import 'prosemirror-example-setup/style/style.css'
 import 'prosemirror-menu/style/menu.css'
 
@@ -296,142 +297,6 @@ function ignoreSuggestion(action) {
 }
 
 /**
- * 分析并打印文档变化中的文本节点修改信息
- * @param {Transaction} tr - ProseMirror事务
- * @param {Node} oldDoc - 修改前的文档
- * @param {Node} newDoc - 修改后的文档
- */
-function analyzeTextNodeChanges(tr, oldDoc, newDoc) {
-  if (!tr.docChanged) return
-
-  console.group('📝 Text Node Changes Detected')
-  
-  // 遍历事务中的所有步骤
-  tr.steps.forEach((step, stepIndex) => {
-    console.log(`\n--- Step ${stepIndex + 1} ---`)
-    console.log('Step type:', step.constructor.name)
-    console.log('Step JSON:', step.toJSON())
-    
-    if (step.from !== undefined && step.to !== undefined) {
-      /*
-      from和to 通常指的是 ProseMirror 的“步骤”（step）对象中的位置。
-      它们表示在文档中要应用更改的起始位置（from）和结束位置（to）。
-
-      具体来说：
-
-      from：更改开始的位置（偏移量，通常是字符或节点索引）。
-      to：更改结束的位置。
-      这两个位置是针对**旧文档（oldDoc）**的，因为步骤（step）是在旧文档上定义的操作，
-      应用后才得到新文档（newDoc）。
-      换句话说，step 的 from 和 to 是描述如何从 oldDoc 变成 newDoc 的位置范围。
-
-      补充说明：
-      如果你在处理 ProseMirror 的 transaction 或 step，
-      通常这些位置都是基于应用更改前的文档（即 oldDoc）。      
-      */
-      const from = step.from
-      const to = step.to
-      
-      console.log(`Position range: ${from} → ${to}`)
-      // 只收集 from 和 to 之间的所有节点
-      const nodesBetween = []
-
-      oldDoc.descendants((node, pos, parent) => {
-        if (pos + node.nodeSize > from && pos < to) {
-          nodesBetween.push({ node, pos, parent })
-        }
-      })
-
-      // 输出 from 和 to 之间的所有节点信息
-      console.log('Nodes between from and to:', nodesBetween.map(info => ({
-        type: info.node.type.name,
-        pos: info.pos,
-        text: info.node.isText ? info.node.text : null,
-        nodeSize: info.node.nodeSize
-      })))
-      
-      // 获取修改前的内容
-      if (from <= oldDoc.content.size && to <= oldDoc.content.size) {
-        const oldSlice = oldDoc.slice(from, to)
-        console.log('Old content:', {
-          size: oldSlice.size,
-          content: oldSlice.content.toString(),
-          textContent: oldSlice.content.textBetween(0, oldSlice.content.size)
-        })
-        
-        // 分析旧内容中的节点
-        oldSlice.content.forEach((node, offset) => {
-          console.log(`  Old node at offset ${offset}:`, {
-            type: node.type.name,
-            isText: node.isText,
-            content: node.isText ? `"${node.text}"` : node.content.toString(),
-            size: node.nodeSize
-          })
-        })
-      }
-      
-      // 获取修改后的内容（如果是替换操作）
-      if (step.slice) {
-        const newSlice = step.slice
-        console.log('New content:', {
-          size: newSlice.size,
-          content: newSlice.content.toString(),
-          textContent: newSlice.content.textBetween(0, newSlice.content.size)
-        })
-        
-        // 分析新内容中的节点
-        newSlice.content.forEach((node, offset) => {
-          console.log(`  New node at offset ${offset}:`, {
-            type: node.type.name,
-            isText: node.isText,
-            content: node.isText ? `"${node.text}"` : node.content.toString(),
-            size: node.nodeSize
-          })
-        })
-      }
-    }
-  })
-  
-  // 额外分析：比较整个文档的文本节点变化
-  console.log('\n--- Document Text Nodes Comparison ---')
-  const oldTextNodes = extractTextNodes(oldDoc)
-  const newTextNodes = extractTextNodes(newDoc)
-  
-  console.log('Old text nodes:', oldTextNodes)
-  console.log('New text nodes:', newTextNodes)
-  
-  // 找出变化的文本节点
-  const changes = findTextNodeChanges(oldTextNodes, newTextNodes)
-  if (changes.length > 0) {
-    console.log('Detected text node changes:', changes)
-  }
-  
-  console.groupEnd()
-}
-
-/**
- * 提取文档中所有文本节点的信息
- * @param {Node} doc - ProseMirror文档
- * @returns {Array} 文本节点信息数组
- */
-function extractTextNodes(doc) {
-  const textNodes = []
-  
-  doc.descendants((node, pos) => {
-    if (node.isText) {
-      textNodes.push({
-        position: pos,
-        text: node.text,
-        length: node.text.length,
-        type: node.type.name
-      })
-    }
-  })
-  
-  return textNodes
-}
-
-/**
  * 比较两组文本节点，找出变化
  * @param {Array} oldNodes - 修改前的文本节点
  * @param {Array} newNodes - 修改后的文本节点
@@ -505,9 +370,9 @@ function createSyntaxCheckPlugin() {
        */
       apply(tr, old, oldState, newState) {
         // 🆕 添加文本节点变化分析
-        //if (tr.docChanged) {
+        // if (tr.docChanged) {
         //  analyzeTextNodeChanges(tr, oldState.doc, newState.doc)
-        //}
+        // }
 
         const newDeco = tr.getMeta('syntax-check-update')
         if (newDeco) {
