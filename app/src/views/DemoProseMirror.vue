@@ -20,12 +20,9 @@ import { applySuggestion, ignoreSuggestion } from '../utils/suggestionActions'
 import 'prosemirror-example-setup/style/style.css'
 import 'prosemirror-menu/style/menu.css'
 import { syntaxPluginKey, ignoredErrors } from '../utils/states'
+
 const editor = ref(null)
 let view = null
-
-
-
-
 
 
 /**

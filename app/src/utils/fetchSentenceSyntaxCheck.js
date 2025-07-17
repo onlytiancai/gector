@@ -1,3 +1,4 @@
+import { ignoredErrors } from './states'
 const grammarCheckApiCache = new Map()
 
 /**
@@ -38,7 +39,10 @@ function parseApiActionsToRanges(actions, sentenceAbsolutePos) {
       const absoluteStart = sentenceAbsolutePos + action.token_start
       const absoluteEnd = sentenceAbsolutePos + action.token_end
       const errorKey = `${absoluteStart}-${absoluteEnd}-${action.original}`
-      // NOTE: ignoredErrors should be handled at a higher level if needed
+      if (ignoredErrors.has(errorKey)) {
+        console.warn(`Ignoring already ignored error: ${errorKey}`)
+        continue
+      }
       ranges.push({ 
         from: absoluteStart, 
         to: absoluteEnd,
