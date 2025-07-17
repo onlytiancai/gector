@@ -194,9 +194,9 @@ export function showTooltip(action, range, targetElement, view, onApply, onIgnor
     
     const actionType = button.getAttribute('data-action')
     if (actionType === 'apply' && onApply) {
-      onApply(action, range)
+      onApply(action, range, view)
     } else if (actionType === 'ignore' && onIgnore) {
-      onIgnore(action)
+      onIgnore(action, view)
     }
   })
   
